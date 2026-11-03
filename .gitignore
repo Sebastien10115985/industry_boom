@@ -1,0 +1,43 @@
+# ===== Python 基础规则 =====
+# 虚拟环境（所有Python依赖库，这行就是用来忽略venv）
+venv/
+.venv/
+env/
+.env/
+
+# Python编译缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook缓存
+.ipynb_checkpoints/
+
+# ===== 量化项目专属（重点！） =====
+# 数据文件：原始财报、行业成分股缓存
+*.csv
+*.parquet
+*.feather
+*.xlsx
+catalog/
+data/
+
+# 日志文件
+*.log
+
+# 密钥、环境变量（不要上传Wind token、账号密码）
+.env
+*.secret
+
+# ===== IDE编辑器文件（可选） =====
+# VSCode
+.vscode/
+# Pycharm
+.idea/
+*.iml
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
