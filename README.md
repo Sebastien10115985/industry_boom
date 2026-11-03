@@ -4,10 +4,44 @@
 
 ## 运行
 
+在 Windows 自带的 PowerShell 中打开本项目根目录（即含 `app.py` 的目录），按顺序执行：
+
+### 1. 准备 Python
+
+本机需预先安装 Python，本项目基于 Python 3.11.6 开发，可用 `python -V` 确认版本。
+
+### 2. 创建虚拟环境
+
+只需运行一次，用于隔离本项目的依赖，避免与其它项目的库版本冲突。
+
+```powershell
+python -m venv .venv
+```
+
+### 3. 激活虚拟环境
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+如果提示「禁止运行脚本」，先放行当前用户，再重新激活：
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### 4. 安装依赖并启动
+
+激活成功后命令行提示符前会出现 `(.venv)`，此时安装全部依赖并启动页面：
+
 ```powershell
 python -m pip install -r requirements.txt
 streamlit run app.py
 ```
+
+仓库不包含 `data/` 目录，首次启动时本地还没有财报缓存，页面会提示无数据。
+先在「行业详情」页签选定一个三级行业点「拉取近一年财报」，或按下文「在线公告命令」
+一节的 `industry sync` 命令在命令行拉取，之后即可正常查看。
 
 页面默认使用本地缓存的巨潮资讯正式定期报告数据（不含任何演示数据）。也可上传 `.csv`、`.xlsx` 或 `.xlsm`；可在页面下载空白数据模板。
 
@@ -402,16 +436,4 @@ python online_cli.py industry sync --industry 化学制剂 --as-of 2026-11-02 --
 这是研究筛选模型，不是收益预测模型。正式使用前应做历史点时回测，纳入退市公司，计入交易成本，并检查行业样本数、财务重述和极端值。
 
 
-# 1. 创建虚拟环境（只需要运行一次）
-python -m venv .venv
-# 2. 激活虚拟环境
-.venv\Scripts\Activate.ps1
-如果提示禁止执行脚本，先执行这条放行：
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-
-激活成功后，命令行前面出现 `(.venv)`，然后执行安装全部依赖：
-pip install -r requirements.txt
-
-cd c:\kwg\Test
-.\.venv\Scripts\python.exe -m streamlit run app.py
