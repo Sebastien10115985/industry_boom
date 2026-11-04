@@ -1,6 +1,13 @@
 pandas==2.3.3
 numpy==2.3.4
 streamlit==1.51.0
+# Arrow 序列化运行时（Streamlit 依赖），固定 21.0.0：
+# - pyarrow 15.0.0 不可用：构建于 numpy 1.x ABI，与 numpy 2 冲突，
+#   且没有 Python 3.13/3.14 的预编译 wheel，会触发源码编译并失败
+# - pyarrow 21.0.0 提供 cp313 wheel，与本地开发环境一致
+# - 云端若选 Python 3.14，pyarrow 21 无 cp314 wheel 仍会编译失败，
+#   请在 Streamlit Cloud「高级设置」把 Python 版本选为 3.12 或 3.13
+pyarrow==21.0.0
 openpyxl==3.1.5
 requests==2.32.5
 pypdf==6.1.3
