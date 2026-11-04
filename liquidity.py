@@ -2,15 +2,20 @@
 
 方向约定：宽松 = 数值变大，收紧 = 数值变小。
 - DR007、十年期国债收益率是资金价格，利率越高越紧，取负向（direction = -1）；
-- 两融余额同比、M1-M2 剪刀差、M2 同比、社融存量同比越高越宽松，取正向（direction = +1）。
+- 两融余额（水平）、两融余额同比、M1-M2 剪刀差、M2 同比、社融存量同比
+  越高越宽松，取正向（direction = +1）。
 
 标准化用滚动窗口 Z-score：周度指标 52 周（至少 26 周），月度指标 36 个月（至少 18 个月），
 避免全样本标准化带来的前视偏差。
 
+分层依据：短端只放价格类指标（利率与两融余额体量）；
+两融余额同比是增速类（变化率），与货币信贷增速同类，归入信用货币增速指数。
+
 合成权重（合计 1.0）：
-- 短端资金价格指数（周度更新）：DR007 20%、十年国债 20%、两融余额同比 12%
-- 货币总量指数（月频更新）：M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18%
-- 流动性指数 = 全部六个指标按原始权重直接加权和，等价于 0.52×短端 + 0.48×货币总量。
+- 短端资金价格指数（周度更新）：DR007 20%、十年国债 20%、两融余额 6%
+- 信用货币增速指数（月频更新）：M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18%、
+  两融余额同比 6%
+- 流动性指数 = 0.46×短端 + 0.54×信用货币增速（组权重由组内指标权重求和自动得出）。
 组内某指标缺失时，该组用现有指标按权重归一化补位，并在 notes 中提示。
 """
 
@@ -20,12 +25,12 @@ import pandas as pd
 
 GROUP_LABELS = {
     "short_term": "短端资金价格指数",
-    "money": "货币总量指数",
+    "money": "信用货币增速指数",
 }
 INDEX_LABELS = {
     "liquidity_index": "流动性指数",
     "short_term_index": "短端资金价格指数",
-    "money_index": "货币总量指数",
+    "money_index": "信用货币增速指数",
 }
 
 METRICS: dict[str, dict[str, object]] = {
@@ -43,12 +48,19 @@ METRICS: dict[str, dict[str, object]] = {
         "weight": 0.20,
         "group": "short_term",
     },
+    "margin_balance": {
+        "label": "两融余额",
+        "frequency": "weekly",
+        "direction": 1,
+        "weight": 0.06,
+        "group": "short_term",
+    },
     "margin_balance_yoy": {
         "label": "两融余额同比",
         "frequency": "weekly",
         "direction": 1,
-        "weight": 0.12,
-        "group": "short_term",
+        "weight": 0.06,
+        "group": "money",
     },
     "m1_m2_gap": {
         "label": "M1-M2剪刀差",
@@ -129,17 +141,55 @@ def rolling_zscore(
     return zscore.where(std.gt(0))
 
 
+REFERENCE_BAND_LOW = 0.10
+REFERENCE_BAND_HIGH = 0.90
+REFERENCE_WINDOW_WEEKS = 52
+REFERENCE_MIN_WEEKS = 26
+REFERENCE_WINDOW_MONTHS = 12
+REFERENCE_MIN_MONTHS = 6
+
+
+def rolling_reference(series: pd.Series, window: int, min_periods: int) -> pd.DataFrame:
+    """滚动均值与 80% 区间（10%~90% 分位），作为指数图上的参考带。"""
+    rolling = series.rolling(window=window, min_periods=min_periods)
+    return pd.DataFrame(
+        {
+            "滚动均值": rolling.mean(),
+            "区间上轨(90%分位)": rolling.quantile(REFERENCE_BAND_HIGH),
+            "区间下轨(10%分位)": rolling.quantile(REFERENCE_BAND_LOW),
+        }
+    )
+
+
 def prepare_metric_series(metric_id: str, series: pd.Series) -> pd.Series:
-    """把原始序列整理为周度、同向化后的口径（未标准化）。"""
+    """把原始序列整理为周度、同向化后的口径（未标准化）。
+
+    两融余额同比是派生指标：输入应是 derive_margin_yoy 产出的周度同比序列，
+    这里只做重采样与同向化。
+    """
     spec = METRICS[metric_id]
     frequency = str(spec["frequency"])
-    if metric_id == "margin_balance_yoy":
-        series = weekly_to_yoy(resample_weekly(series))
-    elif frequency == "weekly":
+    if str(frequency) == "weekly":
         series = resample_weekly(series)
     else:
         series = align_monthly_to_weekly(series)
     return directional(series, int(spec["direction"]))
+
+
+def derive_margin_yoy(level_series: pd.Series) -> pd.Series:
+    """由两融余额（日度水平，亿元）派生周度同比（%）。"""
+    return weekly_to_yoy(resample_weekly(level_series))
+
+
+def prepare_metric_display_series(metric_id: str, series: pd.Series) -> pd.Series:
+    """整理为与指数同源的口径，但保留原始方向与单位，用于展示原始曲线。
+
+    仅用于展示、不参与合成的指标（如社融存量）不在 METRICS 中，按月原值返回。
+    """
+    spec = METRICS.get(metric_id)
+    if spec is None:
+        return series.sort_index()
+    return prepare_metric_series(metric_id, series) * int(spec["direction"])
 
 
 def _weighted_sum(weights: dict[str, float], zscores: dict[str, pd.Series]) -> pd.Series | None:
@@ -168,8 +218,12 @@ def compute_liquidity_indices(
     - notes：缺失指标、窗口不足等提示
     """
     notes: list[str] = []
+    working = dict(metrics)
+    # 两融余额同比从两融余额（水平）派生；直接传入同比序列时使用原值
+    if "margin_balance_yoy" not in working and "margin_balance" in working:
+        working["margin_balance_yoy"] = derive_margin_yoy(working["margin_balance"])
     prepared: dict[str, pd.Series] = {}
-    for metric_id, series in metrics.items():
+    for metric_id, series in working.items():
         if metric_id not in METRICS or series is None or series.dropna().empty:
             continue
         prepared[metric_id] = prepare_metric_series(metric_id, series)
@@ -231,13 +285,19 @@ def compute_liquidity_indices(
         else:
             notes.append(f"{GROUP_LABELS[group]}：组内还没有可通过窗口检验的数据。")
 
-    # 总指数固定为两个子指数的组合（0.52 短端 + 0.48 货币总量），保证口径恒一致；
-    # 组内某指标缺失时该组已按现有指标归一化，因此组合式始终成立
+    # 总指数固定为两个子指数的组合，组权重 = 组内指标权重之和（当前 0.46 短端 + 0.54 信用），
+    # 保证口径恒一致；组内某指标缺失时该组已按现有指标归一化，因此组合式始终成立
+    group_weights = {
+        group: sum(
+            float(spec["weight"]) for spec in METRICS.values() if str(spec["group"]) == group
+        )
+        for group in ("short_term", "money")
+    }
     group_parts = []
     if "short_term" in group_frames:
-        group_parts.append((0.52, group_frames["short_term"]))
+        group_parts.append((group_weights["short_term"], group_frames["short_term"]))
     if "money" in group_frames:
-        group_parts.append((0.48, group_frames["money"]))
+        group_parts.append((group_weights["money"], group_frames["money"]))
     liquidity = None
     if group_parts:
         total_weight = sum(weight for weight, _ in group_parts)

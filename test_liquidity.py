@@ -64,6 +64,20 @@ class ResamplingTests(unittest.TestCase):
         self.assertTrue(np.isclose(yoy.dropna().iloc[0], 10.0))
         self.assertTrue(yoy.iloc[:51].isna().all())
 
+    def test_rolling_reference_band(self):
+        series = make_weekly_series(300)
+        reference = lq.rolling_reference(series, lq.REFERENCE_WINDOW_WEEKS, lq.REFERENCE_MIN_WEEKS)
+        self.assertEqual(
+            list(reference.columns),
+            ["滚动均值", "区间上轨(90%分位)", "区间下轨(10%分位)"],
+        )
+        valid = reference.dropna()
+        self.assertFalse(valid.empty)
+        self.assertTrue((valid["区间下轨(10%分位)"] <= valid["滚动均值"]).all())
+        self.assertTrue((valid["滚动均值"] <= valid["区间上轨(90%分位)"]).all())
+        # 窗口未满时留空，第 min_periods 个观测起才有值
+        self.assertEqual(reference.first_valid_index(), series.index[lq.REFERENCE_MIN_WEEKS - 1])
+
     def test_monthly_alignment_delays_publication(self):
         series = make_monthly_series(6)
         aligned = lq.align_monthly_to_weekly(series, effective_days=10)
@@ -103,27 +117,35 @@ class ResamplingTests(unittest.TestCase):
         self.assertLess(z_aligned.loc[z_monthly.first_valid_index():].abs().max(), 5.0)
 
 
+def make_source_metrics() -> dict[str, pd.Series]:
+    """按缓存口径构造六项来源数据（两融为水平值，同比由 compute 派生）。"""
+    levels = pd.Series(1.5e12 + np.sin(np.arange(400)) * 1e11, index=make_weekly_series(400).index)
+    return {
+        "dr007": make_weekly_series(400, seed=1),
+        "bond_10y": make_weekly_series(400, seed=2),
+        "margin_balance": levels,
+        "m1_m2_gap": make_monthly_series(48),
+        "m2_yoy": make_monthly_series(48),
+    }
+
+
 class WeightAndSynthesisTests(unittest.TestCase):
     def test_metric_weights_sum_to_one(self):
         total = sum(float(spec["weight"]) for spec in lq.METRICS.values())
         self.assertAlmostEqual(total, 1.0)
-        for group in ("short_term", "money"):
-            group_total = sum(
+        group_totals = {
+            group: sum(
                 float(spec["weight"])
                 for spec in lq.METRICS.values()
                 if spec["group"] == group
             )
-            self.assertAlmostEqual(group_total, 0.52 if group == "short_term" else 0.48)
+            for group in ("short_term", "money")
+        }
+        self.assertAlmostEqual(group_totals["short_term"], 0.46)
+        self.assertAlmostEqual(group_totals["money"], 0.54)
 
     def test_compute_indices_without_social_financing(self):
-        metrics = {
-            "dr007": make_weekly_series(400, seed=1),
-            "bond_10y": make_weekly_series(400, seed=2),
-            "margin_balance_yoy": make_weekly_series(400, seed=3),
-            "m1_m2_gap": make_monthly_series(48),
-            "m2_yoy": make_monthly_series(48),
-        }
-        indices, components, notes = lq.compute_liquidity_indices(metrics)
+        indices, components, notes = lq.compute_liquidity_indices(make_source_metrics())
         self.assertFalse(indices.empty)
         self.assertIn("社融存量同比", "".join(notes))
         self.assertIn("liquidity_index", indices.columns)
@@ -131,23 +153,19 @@ class WeightAndSynthesisTests(unittest.TestCase):
         self.assertIn("money_index", indices.columns)
         short_term_rows = components[components["分组"].eq("短端资金价格指数")]
         self.assertEqual(len(short_term_rows), 3)
-        money_rows = components[components["分组"].eq("货币总量指数")]
-        self.assertEqual(len(money_rows), 3)
+        money_rows = components[components["分组"].eq("信用货币增速指数")]
+        self.assertEqual(len(money_rows), 4)
         manual_row = components[components["metric"].eq("social_financing_yoy")].iloc[0]
         self.assertEqual(manual_row["数据区间"], "无数据")
+        # 两融余额同比由两融余额水平派生，自动参与货币组合成
+        yoy_row = components[components["metric"].eq("margin_balance_yoy")].iloc[0]
+        self.assertNotEqual(yoy_row["数据区间"], "无数据")
 
     def test_total_equals_weighted_children_when_complete(self):
-        metrics = {
-            "dr007": make_weekly_series(400, seed=1),
-            "bond_10y": make_weekly_series(400, seed=2),
-            "margin_balance_yoy": make_weekly_series(400, seed=3),
-            "m1_m2_gap": make_monthly_series(48),
-            "m2_yoy": make_monthly_series(48),
-        }
-        indices, _, _ = lq.compute_liquidity_indices(metrics)
+        indices, _, _ = lq.compute_liquidity_indices(make_source_metrics())
         check = indices.dropna()
         self.assertFalse(check.empty)
-        rebuilt = 0.52 * check["short_term_index"] + 0.48 * check["money_index"]
+        rebuilt = 0.46 * check["short_term_index"] + 0.54 * check["money_index"]
         self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
 
     def test_empty_metrics_returns_empty_frame(self):
@@ -162,6 +180,32 @@ class WeightAndSynthesisTests(unittest.TestCase):
         summary = lq.summarize_index(series)
         self.assertEqual(summary["trend"], "较上期明显宽松化")
         self.assertTrue(np.isclose(summary["change"], 0.2))
+
+
+class SocialFinancingParseTests(unittest.TestCase):
+    """央行《社会融资规模存量统计表》解析。"""
+
+    HTML = (
+        "<table><tr><td>项目</td><td>&nbsp;</td><td>Items</td>"
+        "<td>存量</td><td>增速（%）</td><td>存量</td><td>增速（%）</td></tr>"
+        "<tr><td>社会融资规模存量</td><td>&nbsp;</td><td>AFRE(stock)</td>"
+        "<td>449.11 </td><td>8.2 </td><td>451.40 </td><td>8.2 </td>"
+        "<td></td><td></td></tr>"
+        "<tr><td>人民币贷款</td><td>&nbsp;</td><td>RMB loans</td>"
+        "<td>273.30 </td><td>6.1 </td><td>274.15 </td><td>6.1 </td></tr></table>"
+    )
+
+    def test_parse_keeps_only_stats_and_skips_unpublished_months(self):
+        pairs = ls.parse_afre_stock_table(self.HTML)
+        self.assertEqual(pairs, [(449.11, 8.2), (451.40, 8.2)])
+
+    def test_parse_returns_empty_when_row_missing(self):
+        self.assertEqual(ls.parse_afre_stock_table("<table></table>"), [])
+
+    def test_decode_best_handles_both_encodings(self):
+        text = "中国人民银行统计数据社会融资规模"
+        self.assertEqual(ls._decode_best(text.encode("gb18030")), text)
+        self.assertEqual(ls._decode_best(text.encode("utf-8")), text)
 
 
 class CacheTests(unittest.TestCase):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from io import BytesIO
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -31,7 +32,18 @@ from industry_match import (
     industry_options,
     search_industries,
 )
-from liquidity import INDEX_LABELS, compute_liquidity_indices, summarize_index
+from liquidity import (
+    INDEX_LABELS,
+    REFERENCE_MIN_MONTHS,
+    REFERENCE_MIN_WEEKS,
+    REFERENCE_WINDOW_MONTHS,
+    REFERENCE_WINDOW_WEEKS,
+    compute_liquidity_indices,
+    derive_margin_yoy,
+    prepare_metric_display_series,
+    rolling_reference,
+    summarize_index,
+)
 from liquidity_sources import (
     MANUAL_IMPORT_NOTE,
     METRIC_LABELS,
@@ -296,6 +308,45 @@ UNIT_CAPTION = (
     "上方选定排序依据后表格按该项从高到低排列，缺失该指标的公司排在最后；"
     "点击表头也可临时改排序。"
 )
+
+# 流动性原始曲线的展示顺序：先短端三项，再信用货币增速四项
+METRIC_CHART_ORDER: tuple[str, ...] = (
+    "dr007",
+    "bond_10y",
+    "margin_balance",
+    "m1_m2_gap",
+    "m2_yoy",
+    "social_financing_stock",
+    "social_financing_yoy",
+    "margin_balance_yoy",
+)
+
+METRIC_CHART_NOTES: dict[str, str] = {
+    "dr007": (
+        "单位 %。银行间存款类机构 7 天回购利率（FDR007 定盘价），"
+        "季末、年末等跨期时点常见脉冲式冲高。越高越紧。"
+    ),
+    "bond_10y": "单位 %。中债十年期国债到期收益率，反映长端无风险利率水平。越高越紧。",
+    "margin_balance": (
+        "单位 万亿元。沪深两融余额水平，衡量场内杠杆资金的体量。越高越宽松。"
+    ),
+    "m1_m2_gap": (
+        "单位 百分点。M1 同比 − M2 同比，剪刀差走阔代表资金活化、交易需求上升。越高越宽松。"
+    ),
+    "m2_yoy": "单位 %。广义货币供应量同比增速，月频公布，次月 10 日左右生效。",
+    "social_financing_stock": (
+        "单位 万亿元。社会融资规模存量余额，衡量实体信用总量，"
+        "从央行《社会融资规模存量统计表》按月解析。越高越宽松。"
+    ),
+    "social_financing_yoy": (
+        "单位 %。社融存量同比增速，直接取央行存量统计表中的「增速」列，"
+        "与公众号月度报告同源，参与信用货币增速指数合成。越高越宽松。"
+    ),
+    "margin_balance_yoy": (
+        "单位 %。两融余额相对 52 周前的同比增速（由两融余额水平派生），"
+        "属增速类指标，参与信用货币增速指数合成。越高越宽松。"
+    ),
+}
 
 
 def sort_by_metric(frame: pd.DataFrame, metric_column: str | None) -> pd.DataFrame:
@@ -657,8 +708,37 @@ with prosperity_tab:
                     else:
                         st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
 
-def render_liquidity_block(series: pd.Series, *, compare_window: int, monthly: bool) -> None:
-    """渲染单个流动性指数：指标行、折线图与趋势说明。"""
+def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
+    """指数主线 + 滚动均值虚线 + 80% 分位带。"""
+    data = overlay.reset_index()
+    x = alt.X("date:T", title=None)
+    band = alt.Chart(data).mark_area(opacity=0.18, color="#64748b").encode(
+        x=x,
+        y=alt.Y("区间下轨(10%分位):Q", title=label),
+        y2="区间上轨(90%分位):Q",
+    )
+    mean_line = alt.Chart(data).mark_line(color="#d97706", strokeDash=[6, 4]).encode(
+        x=x, y=alt.Y("滚动均值:Q", title=label)
+    )
+    index_line = alt.Chart(data).mark_line(color="#2563eb").encode(
+        x=x, y=alt.Y(f"{label}:Q", title=label)
+    )
+    chart = (
+        alt.layer(band, mean_line, index_line)
+        .resolve_scale(y="shared")
+        .interactive()
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
+def render_liquidity_block(
+    series: pd.Series,
+    *,
+    label: str,
+    compare_window: int,
+    monthly: bool,
+) -> None:
+    """渲染单个流动性指数：指标行、带参考区间的折线图与趋势说明。"""
     if monthly:
         series = series.resample("ME").last().dropna()
     summary = summarize_index(series, window=compare_window)
@@ -672,19 +752,31 @@ def render_liquidity_block(series: pd.Series, *, compare_window: int, monthly: b
         "近一年分位", "—" if summary["percentile"] is None else f"{summary['percentile']:.0%}"
     )
     summary_row[3].metric("数据截至", f"{summary['as_of']:%Y-%m-%d}")
-    st.line_chart(series, use_container_width=True)
+    if monthly:
+        window, min_periods = REFERENCE_WINDOW_MONTHS, REFERENCE_MIN_MONTHS
+        span_note = "过去 12 个月"
+    else:
+        window, min_periods = REFERENCE_WINDOW_WEEKS, REFERENCE_MIN_WEEKS
+        span_note = "过去 52 周（约一年）"
+    overlay = rolling_reference(series, window, min_periods).assign(**{label: series})
+    render_liquidity_history_chart(overlay, label)
     st.caption(
         f"趋势：{summary['trend']}。指数是同向化指标的加权 Z 分，0 代表近一年均值水平，越大越宽松。"
+        f"灰带为{span_note}的 10%~90% 分位区间（80% 波动范围），虚线为同期滚动均值。"
     )
 
 
 with liquidity_tab:
     st.caption(
-        "流动性指数把六个指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再加权合成："
-        "DR007 20%、十年期国债收益率 20%、两融余额同比 12% 合成短端资金价格指数（周度更新）；"
-        "M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18% 合成货币总量指数（月频更新）；"
-        "流动性指数 = 六项按原始权重直接加总，等价于 0.52×短端 + 0.48×货币总量。"
+        "流动性指数把指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再分组合成。"
+        "短端只放价格与体量类指标，两融余额同比属增速类，与货币信贷增速同组："
+        "DR007 20%、十年期国债收益率 20%、两融余额 6% 合成短端资金价格指数（周度更新）；"
+        "M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18%、两融余额同比 6% "
+        "合成信用货币增速指数（月频更新，两融同比周频）；"
+        "流动性指数 = 0.46×短端 + 0.54×信用货币增速。"
         "月度数据按次月 10 日生效，避免使用未公布数据。"
+        "社融存量与存量同比从央行「调查统计司-统计数据-社会融资规模」年度栏目自动解析，"
+        "与央行公众号月度报告同源。"
     )
     if st.button("从公开数据源更新流动性数据", use_container_width=False, key="liquidity_update"):
         liquidity_progress = st.progress(0.0, text="准备更新")
@@ -693,7 +785,7 @@ with liquidity_tab:
             liquidity_progress.progress(step / max(total, 1), text=message)
 
         try:
-            with st.spinner("正在更新 DR007、国债收益率、两融余额与货币数据，约 1-2 分钟。"):
+            with st.spinner("正在更新 DR007、国债收益率、两融余额、货币数据与社融存量表，约 1-2 分钟。"):
                 liquidity_counts = update_liquidity_cache(progress=show_liquidity_progress)
             liquidity_progress.progress(1.0, text="更新完成")
             st.success(
@@ -705,7 +797,7 @@ with liquidity_tab:
 
     liquidity_metrics = load_all_metrics()
     if not liquidity_metrics:
-        st.info("本地还没有流动性数据。点击上方按钮联网更新；社融存量同比需按下方说明手动导入。")
+        st.info("本地还没有流动性数据。点击上方按钮联网更新（含央行社融存量与同比）。")
         st.caption(MANUAL_IMPORT_NOTE)
     else:
         (
@@ -720,30 +812,64 @@ with liquidity_tab:
         else:
             st.subheader("流动性指数")
             render_liquidity_block(
-                liquidity_indices["liquidity_index"], compare_window=52, monthly=False
+                liquidity_indices["liquidity_index"],
+                label=INDEX_LABELS["liquidity_index"],
+                compare_window=52,
+                monthly=False,
             )
 
             st.divider()
             st.subheader("短端资金价格指数（周度更新）")
             if "short_term_index" in liquidity_indices:
                 render_liquidity_block(
-                    liquidity_indices["short_term_index"], compare_window=52, monthly=False
+                    liquidity_indices["short_term_index"],
+                    label=INDEX_LABELS["short_term_index"],
+                    compare_window=52,
+                    monthly=False,
                 )
             short_term_components = liquidity_components[
                 liquidity_components["分组"].eq("短端资金价格指数")
             ].drop(columns=["metric", "分组"])
             st.dataframe(short_term_components, use_container_width=True, hide_index=True)
+            st.caption("「最新值」为原始单位：DR007 与十年期国债收益率为 %，两融余额为亿元。")
 
             st.divider()
-            st.subheader("货币总量指数（月频更新）")
+            st.subheader("信用货币增速指数（月频更新）")
             if "money_index" in liquidity_indices:
                 render_liquidity_block(
-                    liquidity_indices["money_index"], compare_window=12, monthly=True
+                    liquidity_indices["money_index"],
+                    label=INDEX_LABELS["money_index"],
+                    compare_window=12,
+                    monthly=True,
                 )
             money_components = liquidity_components[
-                liquidity_components["分组"].eq("货币总量指数")
+                liquidity_components["分组"].eq("信用货币增速指数")
             ].drop(columns=["metric", "分组"])
             st.dataframe(money_components, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.subheader("原始指标走势")
+            st.caption(
+                "各指标的原始值曲线（未同向化、未标准化），直接读取本地留存数据，离线可查看；"
+                "原始来源链接见下方「数据源留存」表。两融余额同比由两融余额水平派生。"
+            )
+            for metric_id in METRIC_CHART_ORDER:
+                st.markdown(f"**{METRIC_LABELS[metric_id]}**")
+                raw_series = liquidity_metrics.get(metric_id)
+                if metric_id == "margin_balance_yoy" and (
+                    raw_series is None or raw_series.empty
+                ):
+                    level = liquidity_metrics.get("margin_balance")
+                    if level is not None and not level.empty:
+                        raw_series = derive_margin_yoy(level)
+                if raw_series is None or raw_series.empty:
+                    st.info("本地暂无该指标数据，点上方按钮联网更新即可（社融存量与同比自动从央行统计数据栏目抓取）。")
+                    continue
+                display_series = prepare_metric_display_series(metric_id, raw_series)
+                if metric_id == "margin_balance":
+                    display_series = display_series / 1e4  # 亿元 → 万亿元（1 万亿 = 10000 亿）
+                st.line_chart(display_series, use_container_width=True)
+                st.caption(METRIC_CHART_NOTES[metric_id])
 
             st.divider()
             st.subheader("数据源留存")

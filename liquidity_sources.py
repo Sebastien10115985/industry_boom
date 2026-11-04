@@ -8,10 +8,8 @@
 - 十年期国债收益率：中债国债收益率曲线（中央结算公司），每日估值
 - 两融余额：沪深两融余额（东方财富数据中心汇总）
 - M1/M2：货币供应量同比（东方财富数据中心，口径同央行月度统计）
-
-手动导入源：
-- 社融存量同比：央行每月《社会融资规模存量统计数据报告》无公开接口，
-  按手动导入格式更新 data/liquidity/social_financing_yoy.csv 即可。
+- 社融存量与存量同比：央行「调查统计司-统计数据-社会融资规模」年度栏目，
+  逐月解析《社会融资规模存量统计表》（htm 附件），与央行公众号月度报告同源。
 """
 
 from __future__ import annotations
@@ -62,9 +60,9 @@ SOURCE_REGISTRY: dict[str, dict[str, str]] = {
         "url": CHINABOND_PAGE_URL,
         "mode": "自动",
     },
-    "margin_balance_yoy": {
-        "label": "两融余额同比",
-        "frequency": "周频（日度余额取同比）",
+    "margin_balance": {
+        "label": "两融余额",
+        "frequency": "周频（日度余额取每周最后交易日）",
         "provider": "沪深交易所融资融券余额（东方财富数据中心汇总）",
         "url": "https://data.eastmoney.com/rgrz/",
         "mode": "自动",
@@ -83,30 +81,43 @@ SOURCE_REGISTRY: dict[str, dict[str, str]] = {
         "url": PBC_SOCIAL_FINANCE_PAGE_URL,
         "mode": "自动",
     },
+    "social_financing_stock": {
+        "label": "社会融资规模存量",
+        "frequency": "月频",
+        "provider": "央行《社会融资规模存量统计表》（调查统计司统计数据栏目）",
+        "url": PBC_SOCIAL_FINANCE_PAGE_URL,
+        "mode": "自动",
+    },
     "social_financing_yoy": {
         "label": "社融存量同比",
         "frequency": "月频",
-        "provider": "央行《社会融资规模存量统计数据报告》（手动导入）",
+        "provider": "央行《社会融资规模存量统计表》（调查统计司统计数据栏目）",
         "url": PBC_SOCIAL_FINANCE_PAGE_URL,
-        "mode": "手动",
+        "mode": "自动",
     },
 }
 
 METRIC_LABELS = {
     "dr007": "DR007",
     "bond_10y": "十年期国债收益率",
+    "margin_balance": "两融余额",
     "margin_balance_yoy": "两融余额同比",
     "m1_m2_gap": "M1-M2剪刀差",
     "m2_yoy": "M2同比增速",
+    "social_financing_stock": "社会融资规模存量",
     "social_financing_yoy": "社融存量同比",
 }
 
 MANUAL_IMPORT_NOTE = (
-    "社融存量同比按手动导入更新：每月央行发布《社会融资规模存量统计数据报告》后，"
-    f"从 {PBC_SOCIAL_FINANCE_PAGE_URL} 取「同比增长」数值，"
-    "写入 data/liquidity/social_financing_yoy.csv（列：date,value,source_url,retrieved_at），"
-    "date 填报告期末月月末（如 2026-09-30）。"
+    "社融存量与存量同比已改为自动抓取：从央行「调查统计司-统计数据-社会融资规模」"
+    "年度栏目逐月解析《社会融资规模存量统计表》，无需手动导入。"
+    "若央行页面改版导致抓取失败，可临时把数值写入 "
+    "data/liquidity/social_financing_yoy.csv（列：date,value,source_url,retrieved_at）应急。"
 )
+
+PBC_BASE = "http://www.pbc.gov.cn"
+PBC_STATS_INDEX_URL = f"{PBC_BASE}/diaochatongjisi/116219/116319/index.html"
+DEFAULT_PBC_YEARS = 5  # 抓最近 5 年的社融存量表，覆盖 36 个月 Z 窗口
 
 
 def _cached_path(metric_id: str) -> Path:
@@ -133,7 +144,10 @@ def save_metric(metric_id: str, frame: pd.DataFrame, *, retrieved_at: str | None
         return len(load_cached_metric(metric_id))
     target = _cached_path(metric_id)
     target.parent.mkdir(parents=True, exist_ok=True)
-    merged = pd.concat([load_cached_metric(metric_id), frame], ignore_index=True)
+    existing = load_cached_metric(metric_id)
+    merged = frame.copy() if existing.empty else pd.concat([existing, frame], ignore_index=True)
+    if "retrieved_at" not in merged.columns:
+        merged["retrieved_at"] = pd.NA
     stamp = retrieved_at or pd.Timestamp.now().strftime("%Y-%m-%d")
     merged["retrieved_at"] = merged["retrieved_at"].replace("", pd.NA).fillna(stamp)
     merged = merged.sort_values(["date", "retrieved_at"]).drop_duplicates("date", keep="last")
@@ -141,6 +155,32 @@ def save_metric(metric_id: str, frame: pd.DataFrame, *, retrieved_at: str | None
     merged["date"] = pd.to_datetime(merged["date"]).dt.strftime("%Y-%m-%d")
     merged.to_csv(target, index=False, encoding="utf-8-sig")
     return len(merged)
+
+
+_DECODE_MARKERS = ("中国", "人民", "银行", "统计", "数据", "融资", "存量", "货币")
+
+
+def _decode_best(raw: bytes) -> str:
+    """在 utf-8 与 gb18030 之间择优选解码结果。
+
+    央行站点既有 UTF-8 页面（栏目页），也有 GB18030 页面（附件表），
+    个别页面还夹带非法字节导致严格解码失败；用常见中文词命中数打分，
+    比统计汉字个数更可靠（GB18030 错解会产出同样落在汉字区的生僻字）。
+    """
+
+    def score(text: str) -> int:
+        return sum(text.count(marker) for marker in _DECODE_MARKERS)
+
+    best_text, best_score = "", -1
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            text = raw.decode(encoding)
+        except UnicodeDecodeError:
+            text = raw.decode(encoding, errors="ignore")
+        current = score(text)
+        if current > best_score:
+            best_text, best_score = text, current
+    return best_text
 
 
 def _request_json(url: str, *, params: dict | None = None, method: str = "GET") -> dict:
@@ -163,6 +203,7 @@ def _request_json(url: str, *, params: dict | None = None, method: str = "GET") 
 
 
 def _request_text(url: str, *, params: dict | None = None) -> str:
+    """取网页文本，自动处理 GB18030 / UTF-8 混合编码。"""
     last_error: Exception | None = None
     for attempt in range(REQUEST_RETRIES):
         try:
@@ -173,7 +214,7 @@ def _request_text(url: str, *, params: dict | None = None) -> str:
                 timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
-            return response.text
+            return _decode_best(response.content)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             time.sleep(2 + attempt * 3)
@@ -340,7 +381,7 @@ def fetch_margin_balance(years: int = DEFAULT_HISTORY_YEARS) -> pd.DataFrame:
         page += 1
         time.sleep(0.3)
     frame = pd.DataFrame(rows).dropna().drop_duplicates("date")
-    frame["source_url"] = SOURCE_REGISTRY["margin_balance_yoy"]["url"]
+    frame["source_url"] = SOURCE_REGISTRY["margin_balance"]["url"]
     return frame.sort_values("date").reset_index(drop=True)
 
 
@@ -373,6 +414,86 @@ def fetch_money_supply() -> pd.DataFrame:
     return frame.sort_values("date").reset_index(drop=True)
 
 
+def _pbc_social_financing_archives(years: int = DEFAULT_PBC_YEARS) -> list[tuple[int, str]]:
+    """解析央行「统计数据」栏目，返回 [(年份, 社融栏目地址)]，按年份降序截取。"""
+    page = _request_text(PBC_STATS_INDEX_URL)
+    pattern = re.compile(r"<a[^>]+href='([^']+)'[^>]*>([^<]+)</a>")
+    found: list[tuple[int, str]] = []
+    current_year: int | None = None
+    for href, text in pattern.findall(page):
+        label = text.strip()
+        match = re.match(r"(\d{4})年统计数据", label)
+        if match:
+            current_year = int(match.group(1))
+            continue
+        if label == "社会融资规模" and current_year is not None:
+            found.append((current_year, href))
+    # 去重（同一年份可能多次出现），保留首次出现的地址
+    unique: dict[int, str] = {}
+    for year, href in found:
+        unique.setdefault(year, href)
+    ordered = sorted(unique.items(), reverse=True)
+    return ordered[:years]
+
+
+def _pbc_stock_table_url(archive_url: str) -> str | None:
+    """从社融栏目页中取「社会融资规模存量统计表」的 HTML 附件地址。"""
+    page = _request_text(archive_url)
+    anchor = page.find("社会融资规模存量统计表")
+    segment = page[anchor:] if anchor >= 0 else page
+    match = re.search(r'href="([^"]+\.htm)"', segment, flags=re.I)
+    if match:
+        return match.group(1)
+    # 兜底：栏目页固定两个 htm 附件（增量在前、存量在后）
+    links = re.findall(r'href="([^"]+\.htm)"', page, flags=re.I)
+    return links[-1] if links else None
+
+
+def parse_afre_stock_table(html: str) -> list[tuple[float, float]]:
+    """解析《社会融资规模存量统计表》：返回 [(存量万亿元, 同比%)]，按 1 月起逐月。"""
+    row = re.search(r"<tr[^>]*>(?:(?!</tr>).)*AFRE\(stock\).*?</tr>", html, flags=re.S)
+    if not row:
+        return []
+    cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row.group(0), flags=re.S)
+    texts = [re.sub(r"<[^>]+>", "", cell).replace("&nbsp;", " ").strip() for cell in cells]
+    start = next((index for index, text in enumerate(texts) if "AFRE(stock)" in text), -1) + 1
+    if start <= 0:
+        return []
+    values = texts[start:]
+    series: list[tuple[float, float]] = []
+    for index in range(0, len(values) - 1, 2):
+        stock, yoy = values[index], values[index + 1]
+        if not stock or not yoy:
+            break  # 未发布月份留空，其后的月份同样未发布
+        try:
+            series.append((float(stock), float(yoy)))
+        except ValueError:
+            break
+    return series
+
+
+def fetch_social_financing(
+    years: int = DEFAULT_PBC_YEARS,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """抓取社融存量（万亿元）与存量同比（%），返回 (存量, 同比) 两个 DataFrame。"""
+    stock_rows: list[dict] = []
+    yoy_rows: list[dict] = []
+    for year, archive in _pbc_social_financing_archives(years):
+        table_url = _pbc_stock_table_url(f"{PBC_BASE}{archive}" if archive.startswith("/") else archive)
+        if not table_url:
+            continue
+        source_url = f"{PBC_BASE}{table_url}" if table_url.startswith("/") else table_url
+        series = parse_afre_stock_table(_request_text(source_url))
+        for month, (stock, yoy) in enumerate(series, start=1):
+            day = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+            stock_rows.append({"date": day, "value": stock, "source_url": source_url})
+            yoy_rows.append({"date": day, "value": yoy, "source_url": source_url})
+        time.sleep(0.3)
+    stock_frame = pd.DataFrame(stock_rows).drop_duplicates("date").sort_values("date")
+    yoy_frame = pd.DataFrame(yoy_rows).drop_duplicates("date").sort_values("date")
+    return stock_frame.reset_index(drop=True), yoy_frame.reset_index(drop=True)
+
+
 def update_liquidity_cache(progress=None) -> dict[str, int]:
     """抓取全部自动源并合并入本地缓存；返回各指标缓存后的总行数。"""
 
@@ -383,7 +504,7 @@ def update_liquidity_cache(progress=None) -> dict[str, int]:
     jobs = [
         ("dr007", lambda: fetch_dr007()),
         ("bond_10y", lambda: fetch_bond_10y()),
-        ("margin_balance_yoy", lambda: fetch_margin_balance()),
+        ("margin_balance", lambda: fetch_margin_balance()),
     ]
     total = len(jobs) + 1
     counts: dict[str, int] = {}
@@ -410,6 +531,15 @@ def update_liquidity_cache(progress=None) -> dict[str, int]:
         report(total, total, f"M1/M2 更新失败：{exc}")
     counts["m2_yoy"] = len(load_cached_metric("m2_yoy"))
     counts["m1_m2_gap"] = len(load_cached_metric("m1_m2_gap"))
+
+    report(total, total, "正在更新社融存量与同比")
+    try:
+        stock_frame, yoy_frame = fetch_social_financing()
+        save_metric("social_financing_stock", stock_frame)
+        save_metric("social_financing_yoy", yoy_frame)
+    except Exception as exc:  # noqa: BLE001
+        report(total, total, f"社融数据更新失败：{exc}")
+    counts["social_financing_stock"] = len(load_cached_metric("social_financing_stock"))
     counts["social_financing_yoy"] = len(load_cached_metric("social_financing_yoy"))
 
     report(total, total, "流动性数据更新完成")
@@ -417,10 +547,15 @@ def update_liquidity_cache(progress=None) -> dict[str, int]:
 
 
 def load_all_metrics() -> dict[str, pd.Series]:
-    """读全部指标缓存，返回 {metric_id: 以日期为索引的 Series}。"""
+    """读全部指标缓存，返回 {metric_id: 以日期为索引的 Series}。
+
+    兼容旧版命名：两融余额曾存于 margin_balance_yoy.csv（内容是水平值）。
+    """
     result: dict[str, pd.Series] = {}
     for metric_id in SOURCE_REGISTRY:
         frame = load_cached_metric(metric_id)
+        if frame.empty and metric_id == "margin_balance":
+            frame = load_cached_metric("margin_balance_yoy")
         if frame.empty:
             continue
         series = frame.set_index("date")["value"].sort_index()
