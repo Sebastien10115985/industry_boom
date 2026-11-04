@@ -31,6 +31,15 @@ from industry_match import (
     industry_options,
     search_industries,
 )
+from liquidity import INDEX_LABELS, compute_liquidity_indices, summarize_index
+from liquidity_sources import (
+    MANUAL_IMPORT_NOTE,
+    METRIC_LABELS,
+    SOURCE_REGISTRY,
+    load_all_metrics,
+    load_cached_metric,
+    update_liquidity_cache,
+)
 from nbs_provider import DEFAULT_HISTORY_PATH, load_history, update_history
 from prosperity import (
     DEFAULT_TOP_N,
@@ -511,8 +520,8 @@ def render_industry_ranking(
     )
 
 
-watch_tab, prosperity_tab, detail_tab, taxonomy_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "行业详情", "行业目录", "数据质量", "公告证据", "算法说明"]
+watch_tab, prosperity_tab, liquidity_tab, detail_tab, taxonomy_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["观察库", "行业景气度", "流动性分析", "行业详情", "行业目录", "数据质量", "公告证据", "算法说明"]
 )
 
 with watch_tab:
@@ -647,6 +656,124 @@ with prosperity_tab:
                         st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
                     else:
                         st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
+
+def render_liquidity_block(series: pd.Series, *, compare_window: int, monthly: bool) -> None:
+    """渲染单个流动性指数：指标行、折线图与趋势说明。"""
+    if monthly:
+        series = series.resample("ME").last().dropna()
+    summary = summarize_index(series, window=compare_window)
+    if summary is None:
+        st.info("该指数还没有足够的历史数据。")
+        return
+    summary_row = st.columns(4)
+    summary_row[0].metric("最新值", f"{summary['latest']:.2f}")
+    summary_row[1].metric("较上期", "—" if summary["change"] is None else f"{summary['change']:+.2f}")
+    summary_row[2].metric(
+        "近一年分位", "—" if summary["percentile"] is None else f"{summary['percentile']:.0%}"
+    )
+    summary_row[3].metric("数据截至", f"{summary['as_of']:%Y-%m-%d}")
+    st.line_chart(series, use_container_width=True)
+    st.caption(
+        f"趋势：{summary['trend']}。指数是同向化指标的加权 Z 分，0 代表近一年均值水平，越大越宽松。"
+    )
+
+
+with liquidity_tab:
+    st.caption(
+        "流动性指数把六个指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再加权合成："
+        "DR007 20%、十年期国债收益率 20%、两融余额同比 12% 合成短端资金价格指数（周度更新）；"
+        "M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18% 合成货币总量指数（月频更新）；"
+        "流动性指数 = 六项按原始权重直接加总，等价于 0.52×短端 + 0.48×货币总量。"
+        "月度数据按次月 10 日生效，避免使用未公布数据。"
+    )
+    if st.button("从公开数据源更新流动性数据", use_container_width=False, key="liquidity_update"):
+        liquidity_progress = st.progress(0.0, text="准备更新")
+
+        def show_liquidity_progress(step: int, total: int, message: str) -> None:
+            liquidity_progress.progress(step / max(total, 1), text=message)
+
+        try:
+            with st.spinner("正在更新 DR007、国债收益率、两融余额与货币数据，约 1-2 分钟。"):
+                liquidity_counts = update_liquidity_cache(progress=show_liquidity_progress)
+            liquidity_progress.progress(1.0, text="更新完成")
+            st.success(
+                "流动性数据已更新："
+                + "、".join(f"{METRIC_LABELS[key]} {count} 条" for key, count in liquidity_counts.items())
+            )
+        except Exception as exc:
+            st.error(f"流动性数据更新失败：{exc}")
+
+    liquidity_metrics = load_all_metrics()
+    if not liquidity_metrics:
+        st.info("本地还没有流动性数据。点击上方按钮联网更新；社融存量同比需按下方说明手动导入。")
+        st.caption(MANUAL_IMPORT_NOTE)
+    else:
+        (
+            liquidity_indices,
+            liquidity_components,
+            liquidity_notes,
+        ) = compute_liquidity_indices(liquidity_metrics)
+        for note in liquidity_notes:
+            st.warning(note)
+        if liquidity_indices.empty:
+            st.warning("缓存数据还不足以计算指数，请先更新数据。")
+        else:
+            st.subheader("流动性指数")
+            render_liquidity_block(
+                liquidity_indices["liquidity_index"], compare_window=52, monthly=False
+            )
+
+            st.divider()
+            st.subheader("短端资金价格指数（周度更新）")
+            if "short_term_index" in liquidity_indices:
+                render_liquidity_block(
+                    liquidity_indices["short_term_index"], compare_window=52, monthly=False
+                )
+            short_term_components = liquidity_components[
+                liquidity_components["分组"].eq("短端资金价格指数")
+            ].drop(columns=["metric", "分组"])
+            st.dataframe(short_term_components, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.subheader("货币总量指数（月频更新）")
+            if "money_index" in liquidity_indices:
+                render_liquidity_block(
+                    liquidity_indices["money_index"], compare_window=12, monthly=True
+                )
+            money_components = liquidity_components[
+                liquidity_components["分组"].eq("货币总量指数")
+            ].drop(columns=["metric", "分组"])
+            st.dataframe(money_components, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.subheader("数据源留存")
+            source_rows = []
+            for metric_id, info in SOURCE_REGISTRY.items():
+                cached = load_cached_metric(metric_id)
+                latest_fetch = "—"
+                if not cached.empty and cached["retrieved_at"].notna().any():
+                    latest_fetch = str(cached["retrieved_at"].dropna().max())[:10]
+                source_rows.append(
+                    {
+                        "指标": METRIC_LABELS[metric_id],
+                        "频率": info["frequency"],
+                        "来源": info["provider"],
+                        "更新方式": info["mode"],
+                        "缓存条数": len(cached),
+                        "最近抓取": latest_fetch,
+                        "来源链接": info["url"],
+                    }
+                )
+            st.dataframe(
+                pd.DataFrame(source_rows),
+                column_config={"来源链接": st.column_config.LinkColumn("来源链接")},
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "全部原始值按日留存于 data/liquidity/ 下，每条记录带来源链接与抓取时间，可随时回放变化趋势。"
+            )
+            st.caption(MANUAL_IMPORT_NOTE)
 
 with detail_tab:
     st.caption(
