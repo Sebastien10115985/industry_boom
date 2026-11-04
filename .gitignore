@@ -15,15 +15,20 @@ __pycache__/
 .ipynb_checkpoints/
 
 # ===== 量化项目专属（重点！） =====
-# 数据文件：原始财报、行业成分股缓存
-*.csv
+# 数据快照随仓库分发（catalog/ 约 0.1 MB + data/ 约 1.0 MB）：
+# Streamlit Cloud 部署在海外，访问巨潮/东财/央行等国内站点常超时，
+# 云端启动时直接读这些 CSV 缓存；新数据在本地抓取后再提交。
+# 因此这里只忽略「运行台账」与「导出产物」，不忽略数据快照本身。
+
+# 抓取台账：每次检索都会追加，不入库
+data/industries/errors.csv
+data/industries/_search_log.csv
+
+# 导出与临时产物
+output/
 *.parquet
 *.feather
 *.xlsx
-catalog/
-data/
-
-# 日志文件
 *.log
 
 # 密钥、环境变量（不要上传Wind token、账号密码）

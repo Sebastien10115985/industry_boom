@@ -1,0 +1,5 @@
+{
+  "status": "unconfigured",
+  "source": "Wind Client API or official Wind export required",
+  "note": "No unofficial industry IDs are bundled. Run catalog-freeze before online updates."
+}
