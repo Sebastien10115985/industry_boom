@@ -34,6 +34,7 @@ from industry_match import (
 )
 from liquidity import (
     INDEX_LABELS,
+    METRICS,
     REFERENCE_MIN_MONTHS,
     REFERENCE_MIN_WEEKS,
     REFERENCE_WINDOW_MONTHS,
@@ -731,6 +732,30 @@ def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
+def _total_weight_table() -> pd.DataFrame:
+    """流动性总指数的全部成分及其权重（绝对权重，不分列组内占比）。"""
+    rows = [
+        {"指标": str(spec["label"]), "在流动性总指数中权重": f"{float(spec['weight']):.0%}"}
+        for spec in METRICS.values()
+    ]
+    return pd.DataFrame(rows)
+
+
+def _group_share_table(group: str) -> pd.DataFrame:
+    """子指数成分的双重视角权重：组内占比 + 在总指数中的绝对权重。"""
+    specs = {mid: spec for mid, spec in METRICS.items() if str(spec["group"]) == group}
+    group_total = sum(float(spec["weight"]) for spec in specs.values())
+    rows = [
+        {
+            "指标": str(spec["label"]),
+            "在本指数中权重": f"{float(spec['weight']) / group_total:.0%}",
+            "在流动性总指数中权重": f"{float(spec['weight']):.0%}",
+        }
+        for spec in specs.values()
+    ]
+    return pd.DataFrame(rows)
+
+
 def render_liquidity_block(
     series: pd.Series,
     *,
@@ -817,6 +842,12 @@ with liquidity_tab:
                 compare_window=52,
                 monthly=False,
             )
+            st.markdown("**成分参数及权重**")
+            st.dataframe(_total_weight_table(), use_container_width=True, hide_index=True)
+            st.caption(
+                "权重为该指标在流动性总指数中的绝对权重；"
+                "子指数内部占比见下方两个子指数的成分表。"
+            )
 
             st.divider()
             st.subheader("短端资金价格指数（周度更新）")
@@ -827,6 +858,8 @@ with liquidity_tab:
                     compare_window=52,
                     monthly=False,
                 )
+            st.markdown("**成分参数及权重**")
+            st.dataframe(_group_share_table("short_term"), use_container_width=True, hide_index=True)
             short_term_components = liquidity_components[
                 liquidity_components["分组"].eq("短端资金价格指数")
             ].drop(columns=["metric", "分组"])
@@ -842,6 +875,8 @@ with liquidity_tab:
                     compare_window=12,
                     monthly=True,
                 )
+            st.markdown("**成分参数及权重**")
+            st.dataframe(_group_share_table("money"), use_container_width=True, hide_index=True)
             money_components = liquidity_components[
                 liquidity_components["分组"].eq("信用货币增速指数")
             ].drop(columns=["metric", "分组"])
