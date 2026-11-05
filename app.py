@@ -741,19 +741,20 @@ def _total_weight_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _group_share_table(group: str) -> pd.DataFrame:
-    """子指数成分的双重视角权重：组内占比 + 在总指数中的绝对权重。"""
+def _attach_group_share(components: pd.DataFrame, group: str) -> pd.DataFrame:
+    """在子指数成分表中并入组内占比：在「方向」列后插入「在本指数中权重」。"""
     specs = {mid: spec for mid, spec in METRICS.items() if str(spec["group"]) == group}
     group_total = sum(float(spec["weight"]) for spec in specs.values())
-    rows = [
-        {
-            "指标": str(spec["label"]),
-            "在本指数中权重": f"{float(spec['weight']) / group_total:.0%}",
-            "在流动性总指数中权重": f"{float(spec['weight']):.0%}",
-        }
-        for spec in specs.values()
-    ]
-    return pd.DataFrame(rows)
+    shares = {
+        str(spec["label"]): float(spec["weight"]) / group_total for spec in specs.values()
+    }
+    frame = components.copy().rename(columns={"权重": "在流动性总指数中权重"})
+    frame.insert(
+        frame.columns.get_loc("方向") + 1,
+        "在本指数中权重",
+        frame["指标"].map(shares).map(lambda value: f"{value:.0%}" if pd.notna(value) else "—"),
+    )
+    return frame
 
 
 def render_liquidity_block(
@@ -858,11 +859,12 @@ with liquidity_tab:
                     compare_window=52,
                     monthly=False,
                 )
-            st.markdown("**成分参数及权重**")
-            st.dataframe(_group_share_table("short_term"), use_container_width=True, hide_index=True)
-            short_term_components = liquidity_components[
-                liquidity_components["分组"].eq("短端资金价格指数")
-            ].drop(columns=["metric", "分组"])
+            short_term_components = _attach_group_share(
+                liquidity_components[
+                    liquidity_components["分组"].eq("短端资金价格指数")
+                ].drop(columns=["metric", "分组"]),
+                "short_term",
+            )
             st.dataframe(short_term_components, use_container_width=True, hide_index=True)
             st.caption("「最新值」为原始单位：DR007 与十年期国债收益率为 %，两融余额为亿元。")
 
@@ -875,11 +877,12 @@ with liquidity_tab:
                     compare_window=12,
                     monthly=True,
                 )
-            st.markdown("**成分参数及权重**")
-            st.dataframe(_group_share_table("money"), use_container_width=True, hide_index=True)
-            money_components = liquidity_components[
-                liquidity_components["分组"].eq("信用货币增速指数")
-            ].drop(columns=["metric", "分组"])
+            money_components = _attach_group_share(
+                liquidity_components[
+                    liquidity_components["分组"].eq("信用货币增速指数")
+                ].drop(columns=["metric", "分组"]),
+                "money",
+            )
             st.dataframe(money_components, use_container_width=True, hide_index=True)
 
             st.divider()
