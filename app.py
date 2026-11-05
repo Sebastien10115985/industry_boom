@@ -735,7 +735,7 @@ def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
 def _total_weight_table() -> pd.DataFrame:
     """流动性总指数的全部成分及其权重（绝对权重，不分列组内占比）。"""
     rows = [
-        {"指标": str(spec["label"]), "在流动性总指数中权重": f"{float(spec['weight']):.0%}"}
+        {"指标": str(spec["label"]), "权重": f"{float(spec['weight']):.0%}"}
         for spec in METRICS.values()
     ]
     return pd.DataFrame(rows)
