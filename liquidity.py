@@ -38,28 +38,28 @@ METRICS: dict[str, dict[str, object]] = {
         "label": "DR007",
         "frequency": "weekly",
         "direction": -1,
-        "weight": 0.20,
+        "weight": 0.15,
         "group": "short_term",
     },
     "bond_10y": {
         "label": "十年期国债收益率",
         "frequency": "weekly",
         "direction": -1,
-        "weight": 0.20,
+        "weight": 0.15,
         "group": "short_term",
     },
     "margin_balance": {
         "label": "两融余额",
         "frequency": "weekly",
         "direction": 1,
-        "weight": 0.06,
+        "weight": 0.11,
         "group": "short_term",
     },
     "margin_balance_yoy": {
         "label": "两融余额同比",
         "frequency": "weekly",
         "direction": 1,
-        "weight": 0.06,
+        "weight": 0.11,
         "group": "money",
     },
     "m1_m2_gap": {
@@ -285,7 +285,7 @@ def compute_liquidity_indices(
         else:
             notes.append(f"{GROUP_LABELS[group]}：组内还没有可通过窗口检验的数据。")
 
-    # 总指数固定为两个子指数的组合，组权重 = 组内指标权重之和（当前 0.46 短端 + 0.54 信用），
+    # 总指数固定为两个子指数的组合，组权重 = 组内指标权重之和（当前 0.41 短端 + 0.59 信用），
     # 保证口径恒一致；组内某指标缺失时该组已按现有指标归一化，因此组合式始终成立
     group_weights = {
         group: sum(

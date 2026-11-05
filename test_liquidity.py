@@ -141,8 +141,8 @@ class WeightAndSynthesisTests(unittest.TestCase):
             )
             for group in ("short_term", "money")
         }
-        self.assertAlmostEqual(group_totals["short_term"], 0.46)
-        self.assertAlmostEqual(group_totals["money"], 0.54)
+        self.assertAlmostEqual(group_totals["short_term"], 0.41)
+        self.assertAlmostEqual(group_totals["money"], 0.59)
 
     def test_compute_indices_without_social_financing(self):
         indices, components, notes = lq.compute_liquidity_indices(make_source_metrics())
@@ -165,7 +165,7 @@ class WeightAndSynthesisTests(unittest.TestCase):
         indices, _, _ = lq.compute_liquidity_indices(make_source_metrics())
         check = indices.dropna()
         self.assertFalse(check.empty)
-        rebuilt = 0.46 * check["short_term_index"] + 0.54 * check["money_index"]
+        rebuilt = 0.41 * check["short_term_index"] + 0.59 * check["money_index"]
         self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
 
     def test_empty_metrics_returns_empty_frame(self):
