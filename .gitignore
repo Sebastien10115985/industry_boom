@@ -28,8 +28,10 @@ data/industries/_search_log.csv
 output/
 *.parquet
 *.feather
-*.xlsx
 *.log
+*.xlsx
+# 申万官网下载的行业分类表属于原始数据快照，需要入库溯源
+!data/swresearch/*.xlsx
 
 # 密钥、环境变量（不要上传Wind token、账号密码）
 .env
