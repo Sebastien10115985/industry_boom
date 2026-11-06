@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from io import BytesIO
 
@@ -585,8 +586,13 @@ def render_stat_industry_block(
     ranking_frame: pd.DataFrame,
     key_suffix: str,
     expanded: bool = True,
+    before_constituents: Callable[[], None] | None = None,
 ) -> None:
-    """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。"""
+    """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。
+
+    `before_constituents` 在三级行业表格之后、成分公司清单之前调用，
+    用于把「已预拉取财报的重点子行业排名」排进同一个展开区。
+    """
     industries = corresponding_industries(stat_industry)
     if score is None:
         title = (
@@ -615,6 +621,10 @@ def render_stat_industry_block(
             use_container_width=True,
             hide_index=True,
         )
+        if before_constituents is not None:
+            st.caption("以下为本大类中已拉取财报的重点子行业，各自按共同报告期在行业内部排名。")
+            before_constituents()
+            st.divider()
         constituents = constituents_for(industries["industry_l3_id"])
         if constituents.empty:
             st.caption(
@@ -1352,22 +1362,51 @@ with detail_tab:
                     hide_index=True,
                 )
 
-        coverage_name_by_id = dict(
-            zip(coverage["industry_l3_id"].astype(str), coverage["industry_l3_name"].astype(str))
-        )
         for tab_ctx, sector_title in zip(st.tabs(sector_titles), sector_titles):
             with tab_ctx:
                 spec = sector_specs.get(sector_title, {})
                 featured = tuple(str(item) for item in spec.get("featured", ()))  # type: ignore[union-attr]
                 compact_focus = bool(spec.get("compact_focus"))
                 tab_focus_ids = [fid for fid in featured if fid in focus_id_set]
+
+                def render_focus_rankings() -> None:
+                    """本 tab 已预拉取财报的重点子行业，按展示顺序依次排开。"""
+                    subset = focus_ranking[
+                        focus_ranking["industry_l3_id"].astype(str).isin(tab_focus_ids)
+                    ]
+                    if subset.empty:
+                        st.info("这些子行业还没有可排名的财报缓存，可在下方逐个拉取。")
+                        return
+                    tab_group_titles = {
+                        fid: focus_group_titles[fid]
+                        for fid in tab_focus_ids
+                        if fid in focus_group_titles
+                    }
+                    tab_group_captions = {
+                        title: focus_group_captions[title]
+                        for title in set(tab_group_titles.values())
+                        if title in focus_group_captions
+                    }
+                    render_industry_ranking(
+                        subset,
+                        focus_notes,
+                        as_of_date=detail_as_of,
+                        order={fid: position for position, fid in enumerate(tab_focus_ids)},
+                        group_titles=tab_group_titles,
+                        group_captions=tab_group_captions,
+                        sort_by=detail_sort_by,
+                        download_label="下载这些子行业的财报排名",
+                        download_key=f"focus_ranking_{sector_title}",
+                    )
+
                 stat_items = stat_records.get(sector_title, [])
-                st.markdown("**对应统计局大类（景气度与排名靠前公司）**")
                 if not stat_items:
+                    st.markdown("**对应统计局大类（景气度与排名靠前公司）**")
                     st.caption("本地暂无该大类对应的统计局月度景气数据。")
                 else:
+                    st.markdown("**对应统计局大类（景气度与排名靠前公司）**")
                     st.caption(
-                        "统计行业口径来自国家统计局，每项展开可见对应申万三级行业、"
+                        "统计行业口径来自国家统计局，展开可见对应申万三级行业、"
                         "全部成分公司与该大类内排名靠前的公司；景气更新在「行业景气度」页签。"
                     )
                     for stat_item in stat_items:
@@ -1377,60 +1416,26 @@ with detail_tab:
                             profit_latest=stat_item["profit_latest"],  # type: ignore[arg-type]
                             ranking_frame=ranking,
                             key_suffix=f"detail_{sector_title}_{stat_item['stat_industry']}",
-                            expanded=False,
+                            # 电子通信 tab 只有一个大类，直接展开，不再要求点击
+                            expanded=compact_focus,
+                            before_constituents=(
+                                render_focus_rankings if compact_focus and tab_focus_ids else None
+                            ),
                         )
                 st.divider()
-                if tab_focus_ids and compact_focus:
-                    focus_names = "、".join(
-                        coverage_name_by_id.get(fid, fid) for fid in tab_focus_ids
-                    )
-                    st.caption(
-                        f"已预拉取财报的重点子行业：{focus_names}。"
-                        "在下方选择任一子行业，即可查看其内部排名与成分公司。"
-                    )
-                elif tab_focus_ids:
+                if tab_focus_ids and not compact_focus:
                     st.markdown("**重点子行业（已预拉取财报）**")
-                    subset = focus_ranking[
-                        focus_ranking["industry_l3_id"].astype(str).isin(tab_focus_ids)
-                    ]
-                    if subset.empty:
-                        st.info("这些子行业还没有可排名的财报缓存，可在下方逐个拉取。")
-                    else:
-                        tab_group_titles = {
-                            fid: focus_group_titles[fid]
-                            for fid in tab_focus_ids
-                            if fid in focus_group_titles
-                        }
-                        tab_group_captions = {
-                            title: focus_group_captions[title]
-                            for title in set(tab_group_titles.values())
-                            if title in focus_group_captions
-                        }
-                        render_industry_ranking(
-                            subset,
-                            focus_notes,
-                            as_of_date=detail_as_of,
-                            order={fid: position for position, fid in enumerate(tab_focus_ids)},
-                            group_titles=tab_group_titles,
-                            group_captions=tab_group_captions,
-                            sort_by=detail_sort_by,
-                            download_label="下载这些子行业的财报排名",
-                            download_key=f"focus_ranking_{sector_title}",
-                        )
+                    render_focus_rankings()
                     st.divider()
                 members = [
                     member
                     for member in sector_members[sector_title]
-                    if compact_focus or str(member["id"]) not in focus_id_set
+                    if str(member["id"]) not in focus_id_set
                 ]
                 if not members:
                     st.caption("该大类暂无已固化成分公司的子行业。")
                     continue
-                st.markdown(
-                    "**重点与其余子行业（按需拉取）**"
-                    if compact_focus
-                    else "**其余子行业（按需拉取）**"
-                )
+                st.markdown("**其余子行业（按需拉取）**")
                 render_sector_member_panel(
                     members=members,
                     featured=featured,
