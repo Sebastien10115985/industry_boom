@@ -576,8 +576,8 @@ def render_industry_ranking(
     )
 
 
-watch_tab, prosperity_tab, taxonomy_tab, liquidity_tab, detail_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "行业目录", "流动性分析", "行业详情", "数据质量", "公告证据", "算法说明"]
+watch_tab, prosperity_tab, taxonomy_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["观察库", "行业景气度", "行业目录", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
 )
 
 with watch_tab:
