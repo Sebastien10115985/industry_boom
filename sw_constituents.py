@@ -1,10 +1,13 @@
 """内置申万三级行业成分公司（公开来源快照）。
 
 数据来源：https://www.legulegu.com/stockdata/index-composition?industryCode={三级行业ID}.SI
-快照日期：2026-11-03
+快照日期：2026-11-06
 
 固化在仓库内，程序无需联网即可列出每个三级行业的成分公司。
-数据文件：`catalog/sw_l3_constituents.csv`（984 条，覆盖 38 个三级行业）。
+数据文件：`catalog/sw_l3_constituents.csv`（1128 条，覆盖 52 个三级行业）。
+补充来源：有色金属 14 个三级行业（铜/铝/铅锌/黄金/白银/稀土/钨/钼/其他小金属/锂/钴/镍/
+其他金属新材料/磁性材料）由申万宏源研究官网分类表整理，原始文件见 `data/swresearch/`，
+按主营业务归入三级行业。
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 SOURCE_URL = "https://www.legulegu.com/stockdata/index-composition"
-SNAPSHOT_DATE = "2026-11-03"
+SNAPSHOT_DATE = "2026-11-06"
 CONSTITUENTS_PATH = Path(__file__).resolve().parent / "catalog" / "sw_l3_constituents.csv"
 
 COLUMNS = ["industry_l3_id", "industry_l3_name", "company_id", "company_name", "include_date"]
