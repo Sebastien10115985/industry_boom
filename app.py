@@ -1290,6 +1290,22 @@ with detail_tab:
                     "勾选上面的复选框可强制重新联网核对（仍不会重复解析已缓存的公告）。"
                 )
 
+                if not detail_constituents.empty:
+                    st.markdown(
+                        f"**行业成分公司（{len(detail_constituents)} 家，公开快照 {SNAPSHOT_DATE}）**"
+                    )
+                    st.dataframe(
+                        detail_constituents.rename(
+                            columns={
+                                "company_id": "公司代码",
+                                "company_name": "公司名称",
+                                "include_date": "纳入时间",
+                            }
+                        )[["公司代码", "公司名称", "纳入时间"]],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
             if run_industry_sync:
                 should_sync = False
                 targets: list[str] | None = None
@@ -1382,22 +1398,6 @@ with detail_tab:
                     sort_by=detail_sort_by,
                     download_label="下载该行业财报排名",
                     download_key=f"detail_ranking_{key_prefix}",
-                )
-
-            if not detail_constituents.empty:
-                st.subheader(
-                    f"行业成分公司（{len(detail_constituents)} 家，公开快照 {SNAPSHOT_DATE}）"
-                )
-                st.dataframe(
-                    detail_constituents.rename(
-                        columns={
-                            "company_id": "公司代码",
-                            "company_name": "公司名称",
-                            "include_date": "纳入时间",
-                        }
-                    )[["公司代码", "公司名称", "纳入时间"]],
-                    use_container_width=True,
-                    hide_index=True,
                 )
 
         for tab_index, (tab_ctx, sector_title) in enumerate(
