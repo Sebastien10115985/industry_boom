@@ -163,6 +163,40 @@ def corresponding_industries(stat_industry: str) -> pd.DataFrame:
     return mapped_industry_frame(stat_industry)
 
 
+# 除自动选出的 TOP5 外，固定跟踪的行业大类（统计局标准名称）。
+EXTRA_STAT_INDUSTRIES: tuple[str, ...] = (
+    "有色金属矿采选业",
+    "非金属矿采选业",
+    "酒、饮料和精制茶制造业",
+    "有色金属冶炼和压延加工业",
+    "通用设备制造业",
+    "专用设备制造业",
+    "汽车制造业",
+    "电气机械和器材制造业",
+    "仪器仪表制造业",
+    "电力、热力生产和供应业",
+)
+
+
+def prosperity_for_industries(
+    history: pd.DataFrame,
+    window: int = DEFAULT_WINDOW,
+    names: tuple[str, ...] = EXTRA_STAT_INDUSTRIES,
+) -> pd.DataFrame:
+    """取指定统计行业大类的景气行；统计局缺数的行业补占位行，便于固定展示。"""
+    full = compute_prosperity(history, window=window)
+    indexed = full.set_index("stat_industry") if not full.empty else full
+    rows = []
+    for name in names:
+        if name in indexed.index:
+            row = indexed.loc[name].to_dict()
+            row["stat_industry"] = name
+            rows.append(row)
+        else:
+            rows.append({"stat_industry": name, "data_note": "统计局暂无该行业的月度利润数据或有效月数不足"})
+    return pd.DataFrame(rows)
+
+
 def top_companies_for_stat_industry(
     ranking: pd.DataFrame,
     stat_industry: str,
