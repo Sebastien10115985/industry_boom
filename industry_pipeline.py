@@ -97,6 +97,8 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("有色金属",),
         "claimed_l3_ids": (),
         "featured": ("850543", "850531", "850552"),  # 锂、黄金、铜
+        # 冶炼/采选两个大类合并成一个框，默认展开；成分公司选择走下方面板
+        "compact_focus": True,
     },
     {
         "title": "国防军工",
