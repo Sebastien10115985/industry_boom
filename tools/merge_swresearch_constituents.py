@@ -118,7 +118,8 @@ def load_company_names() -> dict[str, str]:
 
 def main() -> None:
     parts = [load_frame(name) for name in
-             ("有色金属三级归属.csv", "国防军工三级归属.csv", "机械设备三级归属.csv")]
+             ("有色金属三级归属.csv", "国防军工三级归属.csv", "机械设备三级归属.csv",
+              "医药生物三级归属.csv")]
     new = pd.concat(parts, ignore_index=True)
     new["company_id"] = new["company_id"].map(to_full)
     new["company_name"] = new["company_name"].astype(str)

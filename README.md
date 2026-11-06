@@ -252,7 +252,7 @@ python -c "from liquidity_sources import update_liquidity_cache; print(update_li
 
 ## 三级行业成分公司（公开快照）
 
-成分公司已从公开来源固化在仓库里，**程序无需联网即可列出**，当前覆盖 **71 个申万三级行业、1713 家公司**（快照日期见 `sw_constituents.py` 的 `SNAPSHOT_DATE`）。
+成分公司已从公开来源固化在仓库里，**程序无需联网即可列出**，当前覆盖 **83 个申万三级行业、2024 家公司**（快照日期见 `sw_constituents.py` 的 `SNAPSHOT_DATE`；医药生物 12 个行业由乐咕成分页与申万官网医药生物分类表补齐）。
 
 - 数据来源：`https://www.legulegu.com/stockdata/index-composition?industryCode={三级行业ID}.SI`（与内置行业目录同源）
 - 数据文件：`catalog/sw_l3_constituents.csv`（行业 ID、行业名称、公司代码、公司名称、纳入时间，可用 Excel 直接打开核对）
