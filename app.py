@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import date
 from io import BytesIO
 
@@ -586,13 +585,10 @@ def render_stat_industry_block(
     ranking_frame: pd.DataFrame,
     key_suffix: str,
     expanded: bool = True,
-    before_constituents: Callable[[], None] | None = None,
     show_constituents: bool = True,
 ) -> None:
     """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。
 
-    `before_constituents` 在三级行业表格之后、成分公司清单之前调用，
-    用于把「已预拉取财报的重点子行业排名」排进同一个展开区；
     `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）。
     """
     industries = corresponding_industries(stat_industry)
@@ -623,10 +619,6 @@ def render_stat_industry_block(
             use_container_width=True,
             hide_index=True,
         )
-        if before_constituents is not None:
-            st.caption("以下为本大类中已拉取财报的重点子行业，各自按共同报告期在行业内部排名。")
-            before_constituents()
-            st.divider()
         if show_constituents:
             constituents = constituents_for(industries["industry_l3_id"])
             if constituents.empty:
@@ -1446,14 +1438,11 @@ with detail_tab:
                             key_suffix=f"detail_{sector_title}_{stat_item['stat_industry']}",
                             # 电子通信 tab 只有一个大类，直接展开，不再要求点击
                             expanded=compact_focus,
-                            before_constituents=(
-                                render_focus_rankings if compact_focus and tab_focus_ids else None
-                            ),
                             # 成分公司选择与拉取按钮在下方「其余子行业」面板已有，此处不重复
                             show_constituents=not compact_focus,
                         )
                 st.divider()
-                if tab_focus_ids and not compact_focus:
+                if tab_focus_ids:
                     st.markdown("**重点子行业（已预拉取财报）**")
                     render_focus_rankings()
                     st.divider()
