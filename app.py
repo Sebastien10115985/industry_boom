@@ -65,6 +65,7 @@ from prosperity import (
     prosperity_for_industries,
     top_companies_for_stat_industry,
 )
+from prosperity_mapping import mapped_industry_ids
 from ranking import MODEL_SPECS, model_weight_table, prepare_growth_metrics, score_snapshot, select_snapshot
 from sw_constituents import SNAPSHOT_DATE, constituents_for, industry_coverage
 from user_commands import parse_update_command
@@ -576,6 +577,119 @@ def render_industry_ranking(
     )
 
 
+def render_stat_industry_block(
+    *,
+    stat_industry: str,
+    score: float | None,
+    profit_latest: float | None,
+    ranking_frame: pd.DataFrame,
+    key_suffix: str,
+    expanded: bool = True,
+) -> None:
+    """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。"""
+    industries = corresponding_industries(stat_industry)
+    if score is None:
+        title = (
+            f"{stat_industry}：统计局暂无月度景气数据，"
+            f"对应 {len(industries)} 个申万三级行业"
+        )
+    else:
+        title = (
+            f"{stat_industry}：景气度 {score}，利润增长 {profit_latest:.1f}%，"
+            f"对应 {len(industries)} 个申万三级行业"
+        )
+    with st.expander(title, expanded=expanded):
+        if industries.empty:
+            st.write("该统计行业没有对应的申万三级行业。")
+            return
+        st.dataframe(
+            industries.rename(
+                columns={
+                    "industry_l3_id": "三级行业ID",
+                    "industry_l3_name": "三级行业",
+                    "industry_l2_name": "二级行业",
+                    "industry_l1_name": "一级行业",
+                    "company_count": "成分公司数",
+                }
+            )[["三级行业ID", "三级行业", "二级行业", "一级行业", "成分公司数"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        constituents = constituents_for(industries["industry_l3_id"])
+        if constituents.empty:
+            st.caption(
+                "这些三级行业尚未固化成分公司，可运行 "
+                "`python tools/freeze_sw_constituents.py --top-n 5` 从公开来源补齐。"
+            )
+            return
+        available = constituents.groupby(["industry_l3_id", "industry_l3_name"]).size()
+        st.caption(
+            f"已固化 {len(available)}/{len(industries)} 个三级行业的全部成分公司，"
+            f"共 {len(constituents)} 家（公开来源快照 {SNAPSHOT_DATE}）。"
+        )
+        labels = {
+            f"{industry_name}（{count} 家）": industry_id
+            for (industry_id, industry_name), count in available.items()
+        }
+        st.markdown(
+            '<div class="constituent-tip">包含多个三级行业，点击下面菜单，可选择某个三级子行业。</div>',
+            unsafe_allow_html=True,
+        )
+        chosen = st.selectbox(
+            "查看某个三级行业的全部成分公司",
+            list(labels),
+            key=f"constituents_{key_suffix}",
+        )
+        selected_id = labels[chosen]
+        selected_name = chosen.split("（")[0]
+        selected_companies = constituents[
+            constituents["industry_l3_id"].eq(selected_id)
+        ]
+        st.dataframe(
+            selected_companies.rename(
+                columns={
+                    "company_id": "公司代码",
+                    "company_name": "公司名称",
+                    "include_date": "纳入时间",
+                }
+            )[["公司代码", "公司名称", "纳入时间"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        if st.button(
+            f"拉取「{selected_name}」全部成分公司近一年财报",
+            key=f"sync_{key_suffix}_{selected_id}",
+        ):
+            sync_progress = st.progress(0.0, text="准备拉取")
+
+            def show_sync_progress(current: int, total: int, message: str) -> None:
+                sync_progress.progress(current / max(total, 1), text=message)
+
+            try:
+                with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
+                    synced, sync_errors = sync_industry_reports(
+                        industry=selected_id,
+                        as_of_date=date.today(),
+                        only_missing=True,
+                        progress=show_sync_progress,
+                    )
+                sync_progress.progress(1.0, text="拉取完成")
+                st.success(
+                    f"{selected_name}：本地累计 {len(synced)} 条定期报告记录，"
+                    f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
+                )
+                if not sync_errors.empty:
+                    st.warning(
+                        f"有 {len(sync_errors)} 条检索或解析失败，明细见 data/industries/errors.csv。"
+                    )
+            except Exception as exc:
+                st.error(f"拉取失败：{exc}")
+        companies = top_companies_for_stat_industry(ranking_frame, stat_industry, per_industry=3)
+        if companies.empty:
+            st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
+        else:
+            st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
+
 watch_tab, prosperity_tab, taxonomy_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
     ["观察库", "行业景气度", "行业目录", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
 )
@@ -643,149 +757,52 @@ with prosperity_tab:
             )
             st.dataframe(shown, use_container_width=True, hide_index=True)
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
-
-            st.subheader("对应申万三级行业与排名靠前公司")
-            def render_stat_industry_block(
-                *,
-                stat_industry: str,
-                score: float | None,
-                profit_latest: float | None,
-                ranking_frame: pd.DataFrame,
-                key_suffix: str,
-                expanded: bool = True,
-            ) -> None:
-                """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。"""
-                industries = corresponding_industries(stat_industry)
-                if score is None:
-                    title = (
-                        f"{stat_industry}：统计局暂无月度景气数据，"
-                        f"对应 {len(industries)} 个申万三级行业"
-                    )
-                else:
-                    title = (
-                        f"{stat_industry}：景气度 {score}，利润增长 {profit_latest:.1f}%，"
-                        f"对应 {len(industries)} 个申万三级行业"
-                    )
-                with st.expander(title, expanded=expanded):
-                    if industries.empty:
-                        st.write("该统计行业没有对应的申万三级行业。")
-                        return
-                    st.dataframe(
-                        industries.rename(
-                            columns={
-                                "industry_l3_id": "三级行业ID",
-                                "industry_l3_name": "三级行业",
-                                "industry_l2_name": "二级行业",
-                                "industry_l1_name": "一级行业",
-                                "company_count": "成分公司数",
-                            }
-                        )[["三级行业ID", "三级行业", "二级行业", "一级行业", "成分公司数"]],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                    constituents = constituents_for(industries["industry_l3_id"])
-                    if constituents.empty:
-                        st.caption(
-                            "这些三级行业尚未固化成分公司，可运行 "
-                            "`python tools/freeze_sw_constituents.py --top-n 5` 从公开来源补齐。"
-                        )
-                        return
-                    available = constituents.groupby(["industry_l3_id", "industry_l3_name"]).size()
-                    st.caption(
-                        f"已固化 {len(available)}/{len(industries)} 个三级行业的全部成分公司，"
-                        f"共 {len(constituents)} 家（公开来源快照 {SNAPSHOT_DATE}）。"
-                    )
-                    labels = {
-                        f"{industry_name}（{count} 家）": industry_id
-                        for (industry_id, industry_name), count in available.items()
-                    }
-                    st.markdown(
-                        '<div class="constituent-tip">包含多个三级行业，点击下面菜单，可选择某个三级子行业。</div>',
-                        unsafe_allow_html=True,
-                    )
-                    chosen = st.selectbox(
-                        "查看某个三级行业的全部成分公司",
-                        list(labels),
-                        key=f"constituents_{key_suffix}",
-                    )
-                    selected_id = labels[chosen]
-                    selected_name = chosen.split("（")[0]
-                    selected_companies = constituents[
-                        constituents["industry_l3_id"].eq(selected_id)
-                    ]
-                    st.dataframe(
-                        selected_companies.rename(
-                            columns={
-                                "company_id": "公司代码",
-                                "company_name": "公司名称",
-                                "include_date": "纳入时间",
-                            }
-                        )[["公司代码", "公司名称", "纳入时间"]],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                    if st.button(
-                        f"拉取「{selected_name}」全部成分公司近一年财报",
-                        key=f"sync_{key_suffix}_{selected_id}",
-                    ):
-                        sync_progress = st.progress(0.0, text="准备拉取")
-
-                        def show_sync_progress(current: int, total: int, message: str) -> None:
-                            sync_progress.progress(current / max(total, 1), text=message)
-
-                        try:
-                            with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
-                                synced, sync_errors = sync_industry_reports(
-                                    industry=selected_id,
-                                    as_of_date=date.today(),
-                                    only_missing=True,
-                                    progress=show_sync_progress,
-                                )
-                            sync_progress.progress(1.0, text="拉取完成")
-                            st.success(
-                                f"{selected_name}：本地累计 {len(synced)} 条定期报告记录，"
-                                f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
-                            )
-                            if not sync_errors.empty:
-                                st.warning(
-                                    f"有 {len(sync_errors)} 条检索或解析失败，明细见 data/industries/errors.csv。"
-                                )
-                        except Exception as exc:
-                            st.error(f"拉取失败：{exc}")
-                    companies = top_companies_for_stat_industry(ranking_frame, stat_industry, per_industry=3)
-                    if companies.empty:
-                        st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
-                    else:
-                        st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
-
-            for row in top_table.itertuples(index=False):
-                render_stat_industry_block(
-                    stat_industry=str(row.stat_industry),
-                    score=float(row.prosperity_score),
-                    profit_latest=float(row.profit_yoy_latest),
-                    ranking_frame=ranking,
-                    key_suffix=f"top5_{row.stat_industry}",
-                )
+            st.caption(
+                "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
+                "「行业详情」对应子 tab 的「对应统计局大类」区块。"
+            )
 
             st.divider()
             st.subheader("重点跟踪行业大类")
             st.caption(
-                "除自动选出的最景气 TOP5 外，固定跟踪以下行业大类："
+                "除自动选出的最景气 TOP5 外，固定跟踪以下行业大类（明细同样见「行业详情」）："
                 + "、".join(EXTRA_STAT_INDUSTRIES)
-                + "。同样列出对应的申万三级行业与成分公司，选中某个子行业即可直接拉取财报。"
             )
             extra_rows = prosperity_for_industries(history, window=prosperity_window)
-            for row in extra_rows.itertuples(index=False):
-                extra_score = None if pd.isna(row.prosperity_score) else float(row.prosperity_score)
-                extra_profit = None if pd.isna(row.profit_yoy_latest) else float(row.profit_yoy_latest)
-                render_stat_industry_block(
-                    stat_industry=str(row.stat_industry),
-                    score=extra_score,
-                    profit_latest=extra_profit,
-                    ranking_frame=ranking,
-                    key_suffix=f"extra_{row.stat_industry}",
-                    expanded=False,
+            extra_columns = [
+                column
+                for column in (
+                    "stat_industry",
+                    "prosperity_score",
+                    "profit_yoy_latest",
+                    "profit_yoy_mean",
+                    "value_added_yoy_latest",
+                    "value_added_yoy_mean",
+                    "profit_momentum",
+                    "months",
+                    "latest_month",
+                    "data_note",
                 )
+                if column in extra_rows.columns
+            ]
+            st.dataframe(
+                extra_rows[extra_columns].rename(
+                    columns={
+                        "stat_industry": "统计行业大类",
+                        "prosperity_score": "景气度",
+                        "profit_yoy_latest": "利润增长率（最新月）",
+                        "profit_yoy_mean": "利润增长率（窗口均值）",
+                        "value_added_yoy_latest": "工业增加值增长率（最新月）",
+                        "value_added_yoy_mean": "工业增加值增长率（窗口均值）",
+                        "profit_momentum": "利润增长动量",
+                        "months": "有效月数",
+                        "latest_month": "最新月份",
+                        "data_note": "数据说明",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
     """指数主线 + 滚动均值虚线 + 80% 分位带。"""
@@ -1095,27 +1112,62 @@ with detail_tab:
         focus_id_set = {str(item) for item in focus_ids}
         sector_titles = [str(spec["title"]) for spec in DETAIL_SECTOR_TABS] + ["其它行业"]
         sector_specs = {str(spec["title"]): spec for spec in DETAIL_SECTOR_TABS}
-        sector_members: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
-        for row in coverage.sort_values("industry_l3_id").itertuples():
-            l3_id = str(row.industry_l3_id)
+
+        def claim_tab(l3_id: str) -> str:
+            """三级行业归属的子 tab：按列表顺序先到先得，未命中归「其它行业」。"""
             l1_name = l1_by_l3.get(l3_id, "")
-            claimed_title = "其它行业"
             for spec in DETAIL_SECTOR_TABS:
                 whitelist = tuple(str(item) for item in spec["claimed_l3_ids"])  # type: ignore[union-attr]
                 if whitelist:
                     if l3_id in whitelist:
-                        claimed_title = str(spec["title"])
-                        break
+                        return str(spec["title"])
                 elif l1_name in tuple(spec["l1_names"]):  # type: ignore[arg-type]
-                    claimed_title = str(spec["title"])
-                    break
-            sector_members[claimed_title].append(
+                    return str(spec["title"])
+            return "其它行业"
+
+        sector_members: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
+        for row in coverage.sort_values("industry_l3_id").itertuples():
+            l3_id = str(row.industry_l3_id)
+            sector_members[claim_tab(l3_id)].append(
                 {
                     "id": l3_id,
                     "name": str(row.industry_l3_name),
                     "count": int(row.company_count),
                 }
             )
+
+        # 统计局各大类按「其映射的三级行业多数落在哪个 tab」归位
+        stat_records: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
+        stat_history = load_history()
+        if not stat_history.empty:
+            _, stat_full = prosperity_board(
+                stat_history, window=prosperity_window, top_n=prosperity_top_n
+            )
+            for stat_row in stat_full.itertuples(index=False):
+                stat_name = str(stat_row.stat_industry)
+                votes: dict[str, int] = {}
+                for l3_id in mapped_industry_ids(stat_name):
+                    claim = claim_tab(str(l3_id))
+                    votes[claim] = votes.get(claim, 0) + 1
+                if not votes:
+                    continue
+                tab_of = max(votes, key=lambda key: votes[key])
+                stat_records[tab_of].append(
+                    {
+                        "stat_industry": stat_name,
+                        "score": None
+                        if pd.isna(stat_row.prosperity_score)
+                        else float(stat_row.prosperity_score),
+                        "profit_latest": None
+                        if pd.isna(stat_row.profit_yoy_latest)
+                        else float(stat_row.profit_yoy_latest),
+                        "sort_key": 0.0
+                        if pd.isna(stat_row.prosperity_score)
+                        else float(stat_row.prosperity_score),
+                    }
+                )
+            for items in stat_records.values():
+                items.sort(key=lambda item: -float(item["sort_key"]))
 
         def render_sector_member_panel(
             *, members: list[dict[str, object]], featured: tuple[str, ...], key_prefix: str
@@ -1275,6 +1327,25 @@ with detail_tab:
                 featured = tuple(str(item) for item in spec.get("featured", ()))  # type: ignore[union-attr]
                 compact_focus = bool(spec.get("compact_focus"))
                 tab_focus_ids = [fid for fid in featured if fid in focus_id_set]
+                stat_items = stat_records.get(sector_title, [])
+                st.markdown("**对应统计局大类（景气度与排名靠前公司）**")
+                if not stat_items:
+                    st.caption("本地暂无该大类对应的统计局月度景气数据。")
+                else:
+                    st.caption(
+                        "统计行业口径来自国家统计局，每项展开可见对应申万三级行业、"
+                        "全部成分公司与该大类内排名靠前的公司；景气更新在「行业景气度」页签。"
+                    )
+                    for stat_item in stat_items:
+                        render_stat_industry_block(
+                            stat_industry=str(stat_item["stat_industry"]),
+                            score=stat_item["score"],  # type: ignore[arg-type]
+                            profit_latest=stat_item["profit_latest"],  # type: ignore[arg-type]
+                            ranking_frame=ranking,
+                            key_suffix=f"detail_{sector_title}_{stat_item['stat_industry']}",
+                            expanded=False,
+                        )
+                st.divider()
                 if tab_focus_ids and compact_focus:
                     focus_names = "、".join(
                         coverage_name_by_id.get(fid, fid) for fid in tab_focus_ids
