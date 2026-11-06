@@ -587,11 +587,13 @@ def render_stat_industry_block(
     key_suffix: str,
     expanded: bool = True,
     before_constituents: Callable[[], None] | None = None,
+    show_constituents: bool = True,
 ) -> None:
     """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。
 
     `before_constituents` 在三级行业表格之后、成分公司清单之前调用，
-    用于把「已预拉取财报的重点子行业排名」排进同一个展开区。
+    用于把「已预拉取财报的重点子行业排名」排进同一个展开区；
+    `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）。
     """
     industries = corresponding_industries(stat_industry)
     if score is None:
@@ -625,75 +627,76 @@ def render_stat_industry_block(
             st.caption("以下为本大类中已拉取财报的重点子行业，各自按共同报告期在行业内部排名。")
             before_constituents()
             st.divider()
-        constituents = constituents_for(industries["industry_l3_id"])
-        if constituents.empty:
-            st.caption(
-                "这些三级行业尚未固化成分公司，可运行 "
-                "`python tools/freeze_sw_constituents.py --top-n 5` 从公开来源补齐。"
-            )
-            return
-        available = constituents.groupby(["industry_l3_id", "industry_l3_name"]).size()
-        st.caption(
-            f"已固化 {len(available)}/{len(industries)} 个三级行业的全部成分公司，"
-            f"共 {len(constituents)} 家（公开来源快照 {SNAPSHOT_DATE}）。"
-        )
-        labels = {
-            f"{industry_name}（{count} 家）": industry_id
-            for (industry_id, industry_name), count in available.items()
-        }
-        st.markdown(
-            '<div class="constituent-tip">包含多个三级行业，点击下面菜单，可选择某个三级子行业。</div>',
-            unsafe_allow_html=True,
-        )
-        chosen = st.selectbox(
-            "查看某个三级行业的全部成分公司",
-            list(labels),
-            key=f"constituents_{key_suffix}",
-        )
-        selected_id = labels[chosen]
-        selected_name = chosen.split("（")[0]
-        selected_companies = constituents[
-            constituents["industry_l3_id"].eq(selected_id)
-        ]
-        st.dataframe(
-            selected_companies.rename(
-                columns={
-                    "company_id": "公司代码",
-                    "company_name": "公司名称",
-                    "include_date": "纳入时间",
-                }
-            )[["公司代码", "公司名称", "纳入时间"]],
-            use_container_width=True,
-            hide_index=True,
-        )
-        if st.button(
-            f"拉取「{selected_name}」全部成分公司近一年财报",
-            key=f"sync_{key_suffix}_{selected_id}",
-        ):
-            sync_progress = st.progress(0.0, text="准备拉取")
-
-            def show_sync_progress(current: int, total: int, message: str) -> None:
-                sync_progress.progress(current / max(total, 1), text=message)
-
-            try:
-                with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
-                    synced, sync_errors = sync_industry_reports(
-                        industry=selected_id,
-                        as_of_date=date.today(),
-                        only_missing=True,
-                        progress=show_sync_progress,
-                    )
-                sync_progress.progress(1.0, text="拉取完成")
-                st.success(
-                    f"{selected_name}：本地累计 {len(synced)} 条定期报告记录，"
-                    f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
+        if show_constituents:
+            constituents = constituents_for(industries["industry_l3_id"])
+            if constituents.empty:
+                st.caption(
+                    "这些三级行业尚未固化成分公司，可运行 "
+                    "`python tools/freeze_sw_constituents.py --top-n 5` 从公开来源补齐。"
                 )
-                if not sync_errors.empty:
-                    st.warning(
-                        f"有 {len(sync_errors)} 条检索或解析失败，明细见 data/industries/errors.csv。"
+                return
+            available = constituents.groupby(["industry_l3_id", "industry_l3_name"]).size()
+            st.caption(
+                f"已固化 {len(available)}/{len(industries)} 个三级行业的全部成分公司，"
+                f"共 {len(constituents)} 家（公开来源快照 {SNAPSHOT_DATE}）。"
+            )
+            labels = {
+                f"{industry_name}（{count} 家）": industry_id
+                for (industry_id, industry_name), count in available.items()
+            }
+            st.markdown(
+                '<div class="constituent-tip">包含多个三级行业，点击下面菜单，可选择某个三级子行业。</div>',
+                unsafe_allow_html=True,
+            )
+            chosen = st.selectbox(
+                "查看某个三级行业的全部成分公司",
+                list(labels),
+                key=f"constituents_{key_suffix}",
+            )
+            selected_id = labels[chosen]
+            selected_name = chosen.split("（")[0]
+            selected_companies = constituents[
+                constituents["industry_l3_id"].eq(selected_id)
+            ]
+            st.dataframe(
+                selected_companies.rename(
+                    columns={
+                        "company_id": "公司代码",
+                        "company_name": "公司名称",
+                        "include_date": "纳入时间",
+                    }
+                )[["公司代码", "公司名称", "纳入时间"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            if st.button(
+                f"拉取「{selected_name}」全部成分公司近一年财报",
+                key=f"sync_{key_suffix}_{selected_id}",
+            ):
+                sync_progress = st.progress(0.0, text="准备拉取")
+
+                def show_sync_progress(current: int, total: int, message: str) -> None:
+                    sync_progress.progress(current / max(total, 1), text=message)
+
+                try:
+                    with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
+                        synced, sync_errors = sync_industry_reports(
+                            industry=selected_id,
+                            as_of_date=date.today(),
+                            only_missing=True,
+                            progress=show_sync_progress,
+                        )
+                    sync_progress.progress(1.0, text="拉取完成")
+                    st.success(
+                        f"{selected_name}：本地累计 {len(synced)} 条定期报告记录，"
+                        f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
                     )
-            except Exception as exc:
-                st.error(f"拉取失败：{exc}")
+                    if not sync_errors.empty:
+                        st.warning(
+                            f"有 {len(sync_errors)} 条检索或解析失败，明细见 data/industries/errors.csv。"
+                        )
+                except Exception as exc:
+                    st.error(f"拉取失败：{exc}")
         companies = top_companies_for_stat_industry(ranking_frame, stat_industry, per_industry=3)
         if companies.empty:
             st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
@@ -1214,7 +1217,11 @@ with detail_tab:
                 items.sort(key=lambda item: -float(item["sort_key"]))
 
         def render_sector_member_panel(
-            *, members: list[dict[str, object]], featured: tuple[str, ...], key_prefix: str
+            *,
+            members: list[dict[str, object]],
+            featured: tuple[str, ...],
+            key_prefix: str,
+            panel_key: str,
         ) -> None:
             """本大类其余子行业：选择、按需拉取、行业内部排名与成分表。"""
             global all_industry_financials
@@ -1226,7 +1233,22 @@ with detail_tab:
                 + f"{member_map[mid]['name']}（{mid}，{member_map[mid]['count']} 家）": mid
                 for mid in ordered_ids
             }
-            with st.container(border=True):
+            with st.container(border=True, key=panel_key):
+                st.markdown(
+                    """<style>
+                    .st-key-PANELKEY [data-testid="stSelectbox"] div[data-baseweb="select"] {
+                        border: 2px solid #2563eb !important;
+                        border-radius: 0.6rem;
+                        background-color: #eff6ff;
+                        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+                    }
+                    .st-key-PANELKEY [data-testid="stSelectbox"] label p {
+                        font-weight: 700;
+                        color: #1d4ed8;
+                    }
+                    </style>""".replace("PANELKEY", panel_key),
+                    unsafe_allow_html=True,
+                )
                 controls = st.columns([3, 1, 1])
                 chosen_label = controls[0].selectbox(
                     "选择子行业", list(industry_labels), key=f"{key_prefix}_choice"
@@ -1362,7 +1384,9 @@ with detail_tab:
                     hide_index=True,
                 )
 
-        for tab_ctx, sector_title in zip(st.tabs(sector_titles), sector_titles):
+        for tab_index, (tab_ctx, sector_title) in enumerate(
+            zip(st.tabs(sector_titles), sector_titles)
+        ):
             with tab_ctx:
                 spec = sector_specs.get(sector_title, {})
                 featured = tuple(str(item) for item in spec.get("featured", ()))  # type: ignore[union-attr]
@@ -1387,6 +1411,10 @@ with detail_tab:
                         for title in set(tab_group_titles.values())
                         if title in focus_group_captions
                     }
+                    # 只有一个主题（如「AI硬件」「创新药」）时标题与 tab 重复，省略
+                    if len(set(tab_group_titles.values())) <= 1:
+                        tab_group_titles = {}
+                        tab_group_captions = {}
                     render_industry_ranking(
                         subset,
                         focus_notes,
@@ -1421,6 +1449,8 @@ with detail_tab:
                             before_constituents=(
                                 render_focus_rankings if compact_focus and tab_focus_ids else None
                             ),
+                            # 成分公司选择与拉取按钮在下方「其余子行业」面板已有，此处不重复
+                            show_constituents=not compact_focus,
                         )
                 st.divider()
                 if tab_focus_ids and not compact_focus:
@@ -1440,6 +1470,7 @@ with detail_tab:
                     members=members,
                     featured=featured,
                     key_prefix=f"sector_{sector_title}",
+                    panel_key=f"sector_panel_{tab_index}",
                 )
 
 
