@@ -1189,15 +1189,24 @@ with detail_tab:
             return "其它行业"
 
         sector_members: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
-        for row in coverage.sort_values("industry_l3_id").itertuples():
-            l3_id = str(row.industry_l3_id)
+        member_ids: set[str] = set()
+
+        def add_member(l3_id: str, name: str, count: int) -> None:
+            """登记一个三级行业；同一行业只登记一次。"""
+            if l3_id in member_ids:
+                return
+            member_ids.add(l3_id)
             sector_members[claim_tab(l3_id)].append(
-                {
-                    "id": l3_id,
-                    "name": str(row.industry_l3_name),
-                    "count": int(row.company_count),
-                }
+                {"id": l3_id, "name": name, "count": count}
             )
+
+        for row in coverage.sort_values("industry_l3_id").itertuples():
+            add_member(
+                str(row.industry_l3_id), str(row.industry_l3_name), int(row.company_count)
+            )
+
+        # 统计局大类对应的三级行业：还没有成分快照的也列出来（标注「暂无成分」）
+        pending_members: dict[str, tuple[str, str]] = {}
 
         # 统计局各大类按「其映射的三级行业多数落在哪个 tab」归位
         stat_records: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
@@ -1212,6 +1221,19 @@ with detail_tab:
                 for l3_id in mapped_industry_ids(stat_name):
                     claim = claim_tab(str(l3_id))
                     votes[claim] = votes.get(claim, 0) + 1
+                # 大类的对应三级行业即使还没有成分缓存，也列出来供按需拉取
+                for industry_row in corresponding_industries(stat_name).itertuples(
+                    index=False
+                ):
+                    l3_id = str(industry_row.industry_l3_id)
+                    claim = claim_tab(l3_id)
+                    # 只有紧凑 tab（电子通信/创新药）补全到全部对应行业，
+                    # 其它 tab 仍只列已有成分快照的行业，避免下拉里堆满不可用项
+                    if not sector_specs.get(claim, {}).get("compact_focus"):
+                        continue
+                    if l3_id in member_ids or l3_id in pending_members:
+                        continue
+                    pending_members[l3_id] = (str(industry_row.industry_l3_name), claim)
                 if not votes:
                     continue
                 tab_of = max(votes, key=lambda key: votes[key])
@@ -1231,6 +1253,15 @@ with detail_tab:
                 )
             for items in stat_records.values():
                 items.sort(key=lambda item: -float(item["sort_key"]))
+        if pending_members:
+            snapshot_counts = (
+                constituents_for(list(pending_members))
+                .groupby("industry_l3_id")
+                .size()
+                .to_dict()
+            )
+            for l3_id, (name, claim) in pending_members.items():
+                add_member(l3_id, name, int(snapshot_counts.get(l3_id, 0)))
 
         def render_sector_member_panel(
             *,
@@ -1243,10 +1274,21 @@ with detail_tab:
             global all_industry_financials
             member_map = {str(member["id"]): member for member in members}
             ordered_ids = [mid for mid in featured if mid in member_map]
+            # 已有成分公司的排在前面，尚无成分快照的（可选但暂时拉不了）排后面
+            ordered_ids += [
+                mid
+                for mid in member_map
+                if mid not in ordered_ids and int(member_map[mid]["count"]) > 0
+            ]
             ordered_ids += [mid for mid in member_map if mid not in ordered_ids]
             industry_labels = {
                 ("★ " if mid in featured else "")
-                + f"{member_map[mid]['name']}（{mid}，{member_map[mid]['count']} 家）": mid
+                + f"{member_map[mid]['name']}（{mid}，"
+                + (
+                    f"{int(member_map[mid]['count'])} 家）"
+                    if int(member_map[mid]["count"]) > 0
+                    else "暂无成分）"
+                ): mid
                 for mid in ordered_ids
             }
             with st.container(border=True, key=panel_key):
@@ -1277,18 +1319,26 @@ with detail_tab:
                     type="primary",
                     use_container_width=True,
                     key=f"{key_prefix}_sync_btn",
+                    disabled=detail_constituents.empty,
                 )
                 force_resync = st.checkbox(
                     "忽略本地缓存，强制重新联网核对",
                     value=False,
                     key=f"{key_prefix}_force",
+                    disabled=detail_constituents.empty,
                 )
-                st.caption(
-                    f"点上面的按钮会先在本地检查「{detail_industry_name}」的 "
-                    f"{len(detail_constituents)} 家成份公司是否都已取得最新报告期数据："
-                    "齐全则不联网并提示，只缺哪几家就只补拉那几家。"
-                    "勾选上面的复选框可强制重新联网核对（仍不会重复解析已缓存的公告）。"
-                )
+                if detail_constituents.empty:
+                    st.caption(
+                        f"「{detail_industry_name}」还没有成分公司快照，暂时无法按公司拉取财报；"
+                        "可先运行 `python tools/freeze_sw_constituents.py` 从公开来源补齐。"
+                    )
+                else:
+                    st.caption(
+                        f"点上面的按钮会先在本地检查「{detail_industry_name}」的 "
+                        f"{len(detail_constituents)} 家成份公司是否都已取得最新报告期数据："
+                        "齐全则不联网并提示，只缺哪几家就只补拉那几家。"
+                        "勾选上面的复选框可强制重新联网核对（仍不会重复解析已缓存的公告）。"
+                    )
 
                 if not detail_constituents.empty:
                     st.markdown(
@@ -1353,11 +1403,16 @@ with detail_tab:
                 all_industry_financials["industry_l3_id"].astype(str).eq(str(detail_industry_id))
             ].copy()
             if industry_raw.empty:
-                st.info(
-                    f"{detail_industry_name} 还没有财报缓存。点击上方「拉取近一年财报」，"
-                    f"或在命令行执行 `python online_cli.py industry sync --industry "
-                    f"{detail_industry_id} --as-of {detail_as_of:%Y-%m-%d}`。"
-                )
+                if detail_constituents.empty:
+                    st.info(
+                        f"{detail_industry_name} 还没有成分公司快照，补齐成分后才能拉取财报。"
+                    )
+                else:
+                    st.info(
+                        f"{detail_industry_name} 还没有财报缓存。点击上方「拉取近一年财报」，"
+                        f"或在命令行执行 `python online_cli.py industry sync --industry "
+                        f"{detail_industry_id} --as-of {detail_as_of:%Y-%m-%d}`。"
+                    )
             else:
                 latest_announcement = pd.to_datetime(
                     industry_raw["announcement_date"], errors="coerce"

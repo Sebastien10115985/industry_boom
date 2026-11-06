@@ -90,6 +90,7 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("医药生物",),
         "claimed_l3_ids": (),
         "featured": FOCUS_INDUSTRY_GROUPS[1][1],  # 化学制剂、其他生物制品、医疗研发外包
+        "compact_focus": True,
     },
     {
         "title": "有色金属",
