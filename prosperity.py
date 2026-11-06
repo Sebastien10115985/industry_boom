@@ -197,17 +197,17 @@ def prosperity_for_industries(
     return pd.DataFrame(rows)
 
 
-def top_companies_for_stat_industry(
+def top_companies_for_industry_ids(
     ranking: pd.DataFrame,
-    stat_industry: str,
+    industry_ids,
     per_industry: int = 3,
 ) -> pd.DataFrame:
-    """在该统计行业对应的申万三级行业中，取每个三级行业排名靠前的公司。"""
+    """在给定申万三级行业集合中，取每个三级行业排名靠前的公司。"""
     if per_industry < 1:
         raise ValueError("per_industry 不能小于 1")
     if ranking is None or ranking.empty or "industry_l3_id" not in ranking.columns:
         return pd.DataFrame()
-    ids = mapped_industry_ids(stat_industry)
+    ids = {str(value) for value in industry_ids}
     if not ids:
         return pd.DataFrame()
     selected = ranking[ranking["industry_l3_id"].astype(str).isin(ids)].copy()
@@ -221,3 +221,14 @@ def top_companies_for_stat_industry(
     picked = selected.groupby("industry_l3_id", sort=False).head(per_industry)
     picked = picked.sort_values(["_score"], ascending=False)
     return picked.drop(columns=["_score", "_rank"]).reset_index(drop=True)
+
+
+def top_companies_for_stat_industry(
+    ranking: pd.DataFrame,
+    stat_industry: str,
+    per_industry: int = 3,
+) -> pd.DataFrame:
+    """在该统计行业对应的申万三级行业中，取每个三级行业排名靠前的公司。"""
+    if ranking is None or ranking.empty or "industry_l3_id" not in ranking.columns:
+        return pd.DataFrame()
+    return top_companies_for_industry_ids(ranking, mapped_industry_ids(stat_industry), per_industry)

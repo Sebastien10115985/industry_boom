@@ -63,7 +63,7 @@ from prosperity import (
     corresponding_industries,
     prosperity_board,
     prosperity_for_industries,
-    top_companies_for_stat_industry,
+    top_companies_for_industry_ids,
 )
 from prosperity_mapping import mapped_industry_ids
 from ranking import MODEL_SPECS, model_weight_table, prepare_growth_metrics, score_snapshot, select_snapshot
@@ -601,31 +601,69 @@ def render_industry_ranking(
     )
 
 
+def merge_stat_items(
+    items: list[dict[str, object]],
+) -> list[list[dict[str, object]]]:
+    """把对应申万三级行业互为子集的统计局大类合并成一组。
+
+    例如「有色金属矿采选业」的 12 个三级行业完全包含于「有色金属冶炼和压延加工业」
+    的 14 个，成分公司 100% 重叠，合并后只显示一个展开框。
+    """
+    groups: list[list[dict[str, object]]] = []
+    for item in sorted(items, key=lambda it: -len(tuple(it["l3_ids"]))):
+        ids = set(item["l3_ids"])  # type: ignore[arg-type]
+        for group in groups:
+            if ids <= set(group[0]["l3_ids"]):  # type: ignore[arg-type]
+                group.append(item)
+                break
+        else:
+            groups.append([item])
+    return groups
+
+
 def render_stat_industry_block(
     *,
-    stat_industry: str,
-    score: float | None,
-    profit_latest: float | None,
+    stat_items: list[dict[str, object]],
     ranking_frame: pd.DataFrame,
     key_suffix: str,
     expanded: bool = True,
     show_constituents: bool = True,
 ) -> None:
-    """渲染一个统计行业大类：对应三级行业、成分公司与排名靠前公司。
+    """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
+    `stat_items` 是同一组的大类列表，对应三级行业取并集；
     `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）。
     """
-    industries = corresponding_industries(stat_industry)
-    if score is None:
-        title = (
-            f"{stat_industry}：统计局暂无月度景气数据，"
-            f"对应 {len(industries)} 个申万三级行业"
-        )
+    industry_frames = [
+        corresponding_industries(str(item["stat_industry"])) for item in stat_items
+    ]
+    if len(industry_frames) == 1:
+        industries = industry_frames[0]
     else:
-        title = (
-            f"{stat_industry}：景气度 {score}，利润增长 {profit_latest:.1f}%，"
-            f"对应 {len(industries)} 个申万三级行业"
+        industries = (
+            pd.concat(industry_frames, ignore_index=True)
+            .drop_duplicates("industry_l3_id")
+            .sort_values("industry_l3_id")
+            .reset_index(drop=True)
         )
+    parts: list[str] = []
+    for item in stat_items:
+        score = item["score"]
+        profit_latest = item["profit_latest"]
+        name = str(item["stat_industry"])
+        if len(stat_items) > 1 and profit_latest is not None:
+            # 合并框内并列多个大类，逐个标注景气度与利润增长
+            parts.append(
+                f"{name}：景气度 {score if score is not None else '—'}，"
+                f"利润增长 {profit_latest:.1f}%"
+            )
+        elif score is None:
+            parts.append(f"{name}：统计局暂无月度景气数据")
+        else:
+            parts.append(
+                f"{name}：景气度 {score}，利润增长 {profit_latest:.1f}%"
+            )
+    title = "；".join(parts) + f"，对应 {len(industries)} 个申万三级行业"
     with st.expander(title, expanded=expanded):
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
@@ -713,7 +751,9 @@ def render_stat_industry_block(
                         )
                 except Exception as exc:
                     st.error(f"拉取失败：{exc}")
-        companies = top_companies_for_stat_industry(ranking_frame, stat_industry, per_industry=3)
+        companies = top_companies_for_industry_ids(
+            ranking_frame, industries["industry_l3_id"], per_industry=3
+        )
         if companies.empty:
             st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
         else:
@@ -1240,6 +1280,7 @@ with detail_tab:
                 stat_records[tab_of].append(
                     {
                         "stat_industry": stat_name,
+                        "l3_ids": tuple(mapped_industry_ids(stat_name)),
                         "score": None
                         if pd.isna(stat_row.prosperity_score)
                         else float(stat_row.prosperity_score),
@@ -1517,13 +1558,15 @@ with detail_tab:
                         "统计行业口径来自国家统计局，展开可见对应申万三级行业、"
                         "全部成分公司与该大类内排名靠前的公司；景气更新在「行业景气度」页签。"
                     )
-                    for stat_item in stat_items:
+                    # 对应三级行业互为子集的大类（如有色采选 ⊂ 冶炼）合并成一个框
+                    for group in merge_stat_items(stat_items):
                         render_stat_industry_block(
-                            stat_industry=str(stat_item["stat_industry"]),
-                            score=stat_item["score"],  # type: ignore[arg-type]
-                            profit_latest=stat_item["profit_latest"],  # type: ignore[arg-type]
+                            stat_items=group,
                             ranking_frame=ranking,
-                            key_suffix=f"detail_{sector_title}_{stat_item['stat_industry']}",
+                            key_suffix=(
+                                f"detail_{sector_title}_"
+                                + "_".join(str(item["stat_industry"]) for item in group)[:60]
+                            ),
                             # 电子通信 tab 只有一个大类，直接展开，不再要求点击
                             expanded=compact_focus,
                             # 成分公司选择与拉取按钮在下方「其余子行业」面板已有，此处不重复
