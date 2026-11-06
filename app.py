@@ -15,8 +15,10 @@ from data_io import (
 )
 from disclosure_pipeline import DEFAULT_DATA_PATH, load_online_financials, sync_official_reports
 from industry_catalog import load_catalog, suggest_model_type
+from industry_match import builtin_industry_frame
 from industry_pipeline import (
     DEFAULT_LOOKBACK_DAYS,
+    SECTOR_GROUPS,
     available_report_periods,
     check_industry_cache,
     focus_industry_groups,
@@ -1121,31 +1123,65 @@ with detail_tab:
 
         st.divider()
 
-        # ---------- 下半部分：其它行业，按需手动拉取 ----------
+        # ---------- 下半部分：其它行业，按制造业大类分组，按需手动拉取 ----------
         st.subheader("其它行业（按需拉取）")
         st.caption(
-            "上方未列出的三级行业默认不占用联网额度：选定一个行业后点「拉取近一年财报」"
+            "上方未列出的三级行业默认不占用联网额度。三级行业按制造业大类分组展示，"
+            "每组主推子行业（★）排在前；选定一个行业后点「拉取近一年财报」"
             "才会去巨潮检索并解析，随后立即在该行业内部排名。"
         )
         sorted_coverage = coverage.sort_values("industry_l3_id").reset_index(drop=True)
         others_coverage = sorted_coverage[
             ~sorted_coverage["industry_l3_id"].astype(str).isin(focus_ids)
         ].reset_index(drop=True)
-        industry_labels = {
-            f"{row.industry_l3_name}（{row.industry_l3_id}，{row.company_count} 家）": row.industry_l3_id
-            for row in others_coverage.itertuples()
+
+        catalog_frame = builtin_industry_frame()
+        l1_by_l3 = dict(
+            zip(
+                catalog_frame["industry_l3_id"].astype(str),
+                catalog_frame["industry_l1_name"].astype(str),
+            )
+        )
+        l1_to_sector = {
+            l1_name: title for title, l1_names, _ in SECTOR_GROUPS for l1_name in l1_names
         }
-        label_list = list(industry_labels)
+        sector_titles = [title for title, _, _ in SECTOR_GROUPS] + ["其它行业"]
+        sector_members: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
+        sector_featured: dict[str, tuple[str, ...]] = {
+            title: featured for title, _, featured in SECTOR_GROUPS
+        }
+        for row in others_coverage.itertuples():
+            group_title = l1_to_sector.get(
+                l1_by_l3.get(str(row.industry_l3_id), ""), "其它行业"
+            )
+            sector_members[group_title].append(
+                {
+                    "id": str(row.industry_l3_id),
+                    "name": str(row.industry_l3_name),
+                    "count": int(row.company_count),
+                }
+            )
 
         with st.container(border=True):
             controls = st.columns([3, 1, 1])
-            chosen_label = controls[0].selectbox("三级行业", label_list, index=0)
+            available_sectors = [
+                title for title in sector_titles if sector_members[title]
+            ]
+            chosen_sector = controls[0].selectbox("制造业大类", available_sectors, key="detail_sector")
+            member_map = {
+                str(member["id"]): member for member in sector_members[chosen_sector]
+            }
+            ordered_ids = [item for item in sector_featured[chosen_sector] if item in member_map]
+            ordered_ids += [mid for mid in member_map if mid not in ordered_ids]
+            industry_labels = {
+                ("★ " if mid in sector_featured[chosen_sector] else "")
+                + f"{member_map[mid]['name']}（{mid}，{member_map[mid]['count']} 家）": mid
+                for mid in ordered_ids
+            }
+            label_list = list(industry_labels)
+            chosen_label = st.selectbox("三级行业", label_list, key="detail_industry_choice")
             detail_industry_id = industry_labels[chosen_label]
-            detail_industry_name = str(
-                others_coverage.loc[
-                    others_coverage["industry_l3_id"].eq(detail_industry_id), "industry_l3_name"
-                ].iloc[0]
-            )
+            detail_industry_name = member_map[detail_industry_id]["name"]
             detail_constituents = constituents_for([detail_industry_id])
             run_industry_sync = controls[2].button(
                 "拉取近一年财报", type="primary", use_container_width=True
