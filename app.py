@@ -690,8 +690,8 @@ def render_stat_industry_block(
         else:
             st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
 
-watch_tab, prosperity_tab, taxonomy_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "行业目录", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
+watch_tab, prosperity_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["观察库", "行业景气度", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
 )
 
 with watch_tab:
@@ -803,6 +803,40 @@ with prosperity_tab:
                 use_container_width=True,
                 hide_index=True,
             )
+
+    st.divider()
+    st.subheader("申万三级行业目录")
+    st.caption(
+        f"内置申万三级行业共 {len(taxonomy)} 个，快照日期 {SNAPSHOT_DATE}，"
+        f"来源 {SOURCE_URL}。行业名称与官方编码不必完全一致，模糊匹配会自动对齐。"
+    )
+    shown_taxonomy = search_industries("", limit=1000).copy()
+    shown_taxonomy["model_type"] = shown_taxonomy["industry_l3_name"].map(suggest_model_type)
+    st.dataframe(
+        shown_taxonomy.rename(
+            columns={
+                "industry_l3_id": "三级行业ID",
+                "industry_l3_name": "三级行业",
+                "industry_l2_name": "二级行业",
+                "industry_l1_name": "一级行业",
+                "company_count": "成分公司数",
+                "match_score": "匹配度",
+            }
+        )[
+            [
+                "三级行业ID",
+                "三级行业",
+                "二级行业",
+                "一级行业",
+                "成分公司数",
+                "model_type",
+                "匹配度",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
 
 def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
     """指数主线 + 滚动均值虚线 + 80% 分位带。"""
@@ -1403,38 +1437,6 @@ with detail_tab:
                     key_prefix=f"sector_{sector_title}",
                 )
 
-
-with taxonomy_tab:
-    st.caption(
-        f"内置申万三级行业共 {len(taxonomy)} 个，快照日期 {SNAPSHOT_DATE}，"
-        f"来源 {SOURCE_URL}。行业名称与官方编码不必完全一致，模糊匹配会自动对齐。"
-    )
-    shown_taxonomy = matched.copy()
-    shown_taxonomy["model_type"] = shown_taxonomy["industry_l3_name"].map(suggest_model_type)
-    st.dataframe(
-        shown_taxonomy.rename(
-            columns={
-                "industry_l3_id": "三级行业ID",
-                "industry_l3_name": "三级行业",
-                "industry_l2_name": "二级行业",
-                "industry_l1_name": "一级行业",
-                "company_count": "成分公司数",
-                "match_score": "匹配度",
-            }
-        )[
-            [
-                "三级行业ID",
-                "三级行业",
-                "二级行业",
-                "一级行业",
-                "成分公司数",
-                "model_type",
-                "匹配度",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
 
 with quality_tab:
     ineligible = ranking[~ranking["eligible"]]

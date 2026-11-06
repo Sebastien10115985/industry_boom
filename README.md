@@ -252,7 +252,7 @@ python -c "from liquidity_sources import update_liquidity_cache; print(update_li
 
 ## 三级行业成分公司（公开快照）
 
-成分公司已从公开来源固化在仓库里，**程序无需联网即可列出**，当前覆盖景气 TOP5 对应的 **35 个申万三级行业、814 家成分公司**（快照日期见 `sw_constituents.py` 的 `SNAPSHOT_DATE`）。
+成分公司已从公开来源固化在仓库里，**程序无需联网即可列出**，当前覆盖 **71 个申万三级行业、1713 家公司**（快照日期见 `sw_constituents.py` 的 `SNAPSHOT_DATE`）。
 
 - 数据来源：`https://www.legulegu.com/stockdata/index-composition?industryCode={三级行业ID}.SI`（与内置行业目录同源）
 - 数据文件：`catalog/sw_l3_constituents.csv`（行业 ID、行业名称、公司代码、公司名称、纳入时间，可用 Excel 直接打开核对）
@@ -260,8 +260,8 @@ python -c "from liquidity_sources import update_liquidity_cache; print(update_li
 
 页面查看位置：
 
-- 「行业景气度」页签：每个统计行业下先列对应三级行业，再用「查看某个三级行业的全部成分公司」下拉框展开该行业全部成分公司
-- 「行业详情」页签：直接列出当前选中三级行业的成分公司
+- 「行业景气度」页签底部：申万三级行业目录（原「行业目录」页签并入），列出全部三级行业、所属一二级行业与成分公司数
+- 「行业详情」页签：每个制造业大类子 tab 内，统计局大类区块可展开对应三级行业与全部成分公司；下方再按子行业拉取财报并列出成分公司
 
 「行业详情」页签底部会列出该行业全部成分公司，并标注本期尚未取到定期报告的公司。
 
