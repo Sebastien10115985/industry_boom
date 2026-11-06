@@ -1531,7 +1531,60 @@ with detail_tab:
                         )
                 st.divider()
                 if tab_focus_ids:
-                    st.markdown("**重点子行业（已预拉取财报）**")
+                    focus_header = st.columns([3, 1.2])
+                    focus_header[0].markdown("**重点子行业（已预拉取财报）**")
+                    if focus_header[1].button(
+                        "刷新最新财报",
+                        use_container_width=True,
+                        key=f"focus_refresh_{sector_title}",
+                        help=(
+                            "重新联网核对这些子行业：哪家公司新披露了定期报告（如百济神州刚发财报），"
+                            "就只补拉那几家，已有缓存不会重复解析。"
+                        ),
+                    ):
+                        focus_refresh_progress = st.progress(0.0, text="准备刷新")
+                        refreshed_industries: list[str] = []
+                        refresh_error_count = 0
+                        for position, focus_id in enumerate(tab_focus_ids, start=1):
+                            focus_name = coverage_name_by_id.get(focus_id, focus_id)
+                            focus_refresh_progress.progress(
+                                (position - 1) / len(tab_focus_ids),
+                                text=f"核对 {focus_name}（{position}/{len(tab_focus_ids)}）",
+                            )
+                            status = check_industry_cache(focus_id, detail_as_of, lookback_days)
+                            if not status.needs_network:
+                                continue
+                            try:
+                                _, industry_errors = sync_industry_reports(
+                                    industry=focus_id,
+                                    as_of_date=detail_as_of,
+                                    lookback_days=lookback_days,
+                                    company_ids=list(status.pending_ids) or None,
+                                )
+                                refreshed_industries.append(str(focus_name))
+                                refresh_error_count += len(industry_errors)
+                            except Exception as exc:
+                                st.warning(f"{focus_name} 刷新失败：{exc}")
+                        focus_refresh_progress.progress(1.0, text="刷新完成")
+                        if refreshed_industries:
+                            tail = (
+                                f"（{refresh_error_count} 条检索或解析失败，可用命令行查看明细）"
+                                if refresh_error_count
+                                else ""
+                            )
+                            refresh_message = (
+                                "已补拉新披露财报的子行业：" + "、".join(refreshed_industries) + tail
+                            )
+                        else:
+                            refresh_message = "这些子行业的财报缓存已是最新，没有需要补拉的公司。"
+                        # rerun 会重建页面，先把结果存起来，重跑后展示
+                        st.session_state[f"focus_refresh_msg_{sector_title}"] = refresh_message
+                        st.rerun()
+                    refresh_notice = st.session_state.pop(
+                        f"focus_refresh_msg_{sector_title}", None
+                    )
+                    if refresh_notice:
+                        st.success(refresh_notice)
                     render_focus_rankings()
                     st.divider()
                 members = [
