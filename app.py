@@ -475,6 +475,7 @@ def render_industry_group(
     group: pd.DataFrame,
     industry_key: str,
     sort_by: str | None = None,
+    note: str | None = None,
 ) -> None:
     """渲染单个三级行业的排名卡片（指标、明细表、缺漏提示）。"""
     group = group.sort_values("industry_rank", na_position="last")
@@ -524,6 +525,8 @@ def render_industry_group(
                 f"其中 {len(absent)} 家本期未取得定期报告："
                 + "、".join(absent["company_name"].astype(str).tolist())
             )
+        if note:
+            st.caption(note)
 
 
 def render_industry_ranking(
@@ -537,20 +540,40 @@ def render_industry_ranking(
     sort_by: str | None = None,
     download_label: str = "下载三级行业财报排名",
     download_key: str = "industry_ranking_download",
+    inline_notes: bool = False,
 ) -> None:
     """渲染一组三级行业排名。
 
     `order` 给出行业 ID 的展示顺序；`group_titles` 给出行业 ID 所属主题，
     主题切换处插入分组标题并隔开，`group_captions` 为主题下的一句说明。
+    `inline_notes=True` 时把「行业名：说明」式的备注放进该行业框内最下方，
+    未能对上行业名的备注仍在顶部以提示条显示。
     """
-    for note in notes:
-        st.info(note)
+    notes_by_name: dict[str, str] = {}
+    if inline_notes:
+        for note in notes:
+            name, separator, detail = note.partition("：")
+            if separator:
+                notes_by_name[name.strip()] = detail.strip()
     if ranking.empty:
+        for note in notes:
+            st.info(note)
         st.warning("截止日之前没有可排名的定期报告。")
         return
     groups = list(ranking.groupby("industry_l3_id", sort=True))
     if order:
         groups.sort(key=lambda item: order.get(str(item[0]), len(order) + 1))
+    if not inline_notes:
+        for note in notes:
+            st.info(note)
+    else:
+        group_names = {
+            str(group["industry_l3_name"].iloc[0]) for _, group in groups
+        }
+        for note in notes:
+            name = note.partition("：")[0].strip()
+            if name not in group_names:
+                st.info(note)
     current_group = None
     for industry_key, group in groups:
         title = (group_titles or {}).get(str(industry_key))
@@ -562,7 +585,8 @@ def render_industry_ranking(
             if caption:
                 st.caption(caption)
             current_group = title
-        render_industry_group(group, industry_key, sort_by)
+        group_name = str(group["industry_l3_name"].iloc[0])
+        render_industry_group(group, industry_key, sort_by, note=notes_by_name.get(group_name))
     highest_period = pd.to_datetime(ranking["report_period"], errors="coerce").max()
     st.download_button(
         download_label,
@@ -1407,9 +1431,16 @@ with detail_tab:
                     if len(set(tab_group_titles.values())) <= 1:
                         tab_group_titles = {}
                         tab_group_captions = {}
+                    # 只保留本 tab 这些行业的备注，避免跨 tab 串条
+                    subset_names = set(subset["industry_l3_name"].astype(str))
+                    tab_notes = [
+                        note
+                        for note in focus_notes
+                        if note.partition("：")[0].strip() in subset_names
+                    ]
                     render_industry_ranking(
                         subset,
-                        focus_notes,
+                        tab_notes,
                         as_of_date=detail_as_of,
                         order={fid: position for position, fid in enumerate(tab_focus_ids)},
                         group_titles=tab_group_titles,
@@ -1417,6 +1448,8 @@ with detail_tab:
                         sort_by=detail_sort_by,
                         download_label="下载这些子行业的财报排名",
                         download_key=f"focus_ranking_{sector_title}",
+                        # 报告期等备注放进各自子行业框内，避免堆在标题下
+                        inline_notes=True,
                     )
 
                 stat_items = stat_records.get(sector_title, [])
