@@ -18,7 +18,7 @@ from industry_catalog import load_catalog, suggest_model_type
 from industry_match import builtin_industry_frame
 from industry_pipeline import (
     DEFAULT_LOOKBACK_DAYS,
-    SECTOR_GROUPS,
+    DETAIL_SECTOR_TABS,
     available_report_periods,
     check_industry_cache,
     focus_industry_groups,
@@ -576,8 +576,8 @@ def render_industry_ranking(
     )
 
 
-watch_tab, prosperity_tab, liquidity_tab, detail_tab, taxonomy_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "流动性分析", "行业详情", "行业目录", "数据质量", "公告证据", "算法说明"]
+watch_tab, prosperity_tab, taxonomy_tab, liquidity_tab, detail_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["观察库", "行业景气度", "行业目录", "流动性分析", "行业详情", "数据质量", "公告证据", "算法说明"]
 )
 
 with watch_tab:
@@ -1067,24 +1067,14 @@ with detail_tab:
         )
         detail_sort_by = SORT_METRICS[detail_sort_label]
 
-        # ---------- 上半部分：景气行业，按主题分组 ----------
-        st.subheader("景气行业")
-        st.caption(
-            f"下列 {len(focus)} 个三级行业已预先拉取近一年财报，各自按最新共同报告期排名，"
-            "按主题分组、组内按行业景气度顺次排列。"
-            "每个行业内部用同一报告期做横截面比较，不跨行业混排。"
-        )
+        # ---------- 按统计局制造业大类分 tab：重点子行业 + 其余子行业按需拉取 ----------
         st.caption(UNIT_CAPTION)
         focus_raw = all_industry_financials[
             all_industry_financials["industry_l3_id"].astype(str).isin(focus_ids)
         ].copy()
-        if focus_raw.empty:
-            st.info(
-                "这些子行业还没有财报缓存。可在命令行执行 "
-                f"`python online_cli.py industry sync --industry {focus_ids[0] if focus_ids else ''} "
-                f"--as-of {detail_as_of:%Y-%m-%d}` 拉取。"
-            )
-        else:
+        focus_ranking = pd.DataFrame()
+        focus_notes: list[str] = []
+        if not focus_raw.empty:
             try:
                 focus_ranking, focus_notes = rank_industry_financials(
                     focus_raw,
@@ -1094,46 +1084,6 @@ with detail_tab:
                 )
             except Exception as exc:
                 st.error(f"计算行业排名失败：{exc}")
-                focus_ranking, focus_notes = pd.DataFrame(), []
-            ranked_ids = (
-                set(focus_ranking["industry_l3_id"].astype(str))
-                if not focus_ranking.empty
-                else set()
-            )
-            unranked = [item for item in focus if item["industry_l3_id"] not in ranked_ids]
-            if unranked:
-                st.warning(
-                    "以下子行业本地还没有可排名的财报数据，可先拉取："
-                    + "、".join(item["industry_l3_name"] for item in unranked)
-                    + "（命令行示例：`python online_cli.py industry sync --industry "
-                    + unranked[0]["industry_l3_id"]
-                    + f" --as-of {detail_as_of:%Y-%m-%d}`）"
-                )
-            render_industry_ranking(
-                focus_ranking,
-                focus_notes,
-                as_of_date=detail_as_of,
-                order=focus_order,
-                group_titles=focus_group_titles,
-                group_captions=focus_group_captions,
-                sort_by=detail_sort_by,
-                download_label="下载这些景气行业的财报排名",
-                download_key="focus_ranking_download",
-            )
-
-        st.divider()
-
-        # ---------- 下半部分：其它行业，按制造业大类分组，按需手动拉取 ----------
-        st.subheader("其它行业（按需拉取）")
-        st.caption(
-            "上方未列出的三级行业默认不占用联网额度。三级行业按制造业大类分组展示，"
-            "每组主推子行业（★）排在前；选定一个行业后点「拉取近一年财报」"
-            "才会去巨潮检索并解析，随后立即在该行业内部排名。"
-        )
-        sorted_coverage = coverage.sort_values("industry_l3_id").reset_index(drop=True)
-        others_coverage = sorted_coverage[
-            ~sorted_coverage["industry_l3_id"].astype(str).isin(focus_ids)
-        ].reset_index(drop=True)
 
         catalog_frame = builtin_industry_frame()
         l1_by_l3 = dict(
@@ -1142,173 +1092,220 @@ with detail_tab:
                 catalog_frame["industry_l1_name"].astype(str),
             )
         )
-        l1_to_sector = {
-            l1_name: title for title, l1_names, _ in SECTOR_GROUPS for l1_name in l1_names
-        }
-        sector_titles = [title for title, _, _ in SECTOR_GROUPS] + ["其它行业"]
+        focus_id_set = {str(item) for item in focus_ids}
+        sector_titles = [str(spec["title"]) for spec in DETAIL_SECTOR_TABS] + ["其它行业"]
+        sector_specs = {str(spec["title"]): spec for spec in DETAIL_SECTOR_TABS}
         sector_members: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
-        sector_featured: dict[str, tuple[str, ...]] = {
-            title: featured for title, _, featured in SECTOR_GROUPS
-        }
-        for row in others_coverage.itertuples():
-            group_title = l1_to_sector.get(
-                l1_by_l3.get(str(row.industry_l3_id), ""), "其它行业"
-            )
-            sector_members[group_title].append(
+        for row in coverage.sort_values("industry_l3_id").itertuples():
+            l3_id = str(row.industry_l3_id)
+            l1_name = l1_by_l3.get(l3_id, "")
+            claimed_title = "其它行业"
+            for spec in DETAIL_SECTOR_TABS:
+                whitelist = tuple(str(item) for item in spec["claimed_l3_ids"])  # type: ignore[union-attr]
+                if whitelist:
+                    if l3_id in whitelist:
+                        claimed_title = str(spec["title"])
+                        break
+                elif l1_name in tuple(spec["l1_names"]):  # type: ignore[arg-type]
+                    claimed_title = str(spec["title"])
+                    break
+            sector_members[claimed_title].append(
                 {
-                    "id": str(row.industry_l3_id),
+                    "id": l3_id,
                     "name": str(row.industry_l3_name),
                     "count": int(row.company_count),
                 }
             )
 
-        with st.container(border=True):
-            controls = st.columns([3, 1, 1])
-            available_sectors = [
-                title for title in sector_titles if sector_members[title]
-            ]
-            chosen_sector = controls[0].selectbox("制造业大类", available_sectors, key="detail_sector")
-            member_map = {
-                str(member["id"]): member for member in sector_members[chosen_sector]
-            }
-            ordered_ids = [item for item in sector_featured[chosen_sector] if item in member_map]
+        def render_sector_member_panel(
+            *, members: list[dict[str, object]], featured: tuple[str, ...], key_prefix: str
+        ) -> None:
+            """本大类其余子行业：选择、按需拉取、行业内部排名与成分表。"""
+            global all_industry_financials
+            member_map = {str(member["id"]): member for member in members}
+            ordered_ids = [mid for mid in featured if mid in member_map]
             ordered_ids += [mid for mid in member_map if mid not in ordered_ids]
             industry_labels = {
-                ("★ " if mid in sector_featured[chosen_sector] else "")
+                ("★ " if mid in featured else "")
                 + f"{member_map[mid]['name']}（{mid}，{member_map[mid]['count']} 家）": mid
                 for mid in ordered_ids
             }
-            label_list = list(industry_labels)
-            chosen_label = st.selectbox("三级行业", label_list, key="detail_industry_choice")
-            detail_industry_id = industry_labels[chosen_label]
-            detail_industry_name = member_map[detail_industry_id]["name"]
-            detail_constituents = constituents_for([detail_industry_id])
-            run_industry_sync = controls[2].button(
-                "拉取近一年财报", type="primary", use_container_width=True
-            )
-            force_resync = st.checkbox(
-                "忽略本地缓存，强制重新联网核对", value=False, key="detail_force_resync"
-            )
-            st.caption(
-                f"点上面的按钮会先在本地检查「{detail_industry_name}」的 "
-                f"{len(detail_constituents)} 家成份公司是否都已取得最新报告期数据："
-                "齐全则不联网并提示，只缺哪几家就只补拉那几家。"
-                "勾选上面的复选框可强制重新联网核对（仍不会重复解析已缓存的公告）。"
-                f"联网时到巨潮资讯检索 {detail_as_of:%Y-%m-%d} 之前 {lookback_days} 天内披露的"
-                "正式定期报告（年报/半年报/季报），下载公告原文抽取营收、净利润、增长率、毛利率，"
-                "总市值由公开行情接口补齐，再按现有算法排名。"
-            )
-
-        if run_industry_sync:
-            should_sync = False
-            targets: list[str] | None = None
-            if force_resync:
-                should_sync = True
-            else:
-                cache_status = check_industry_cache(
-                    detail_industry_id, detail_as_of, lookback_days
+            with st.container(border=True):
+                controls = st.columns([3, 1, 1])
+                chosen_label = controls[0].selectbox(
+                    "选择子行业", list(industry_labels), key=f"{key_prefix}_choice"
                 )
-                if cache_status.needs_network:
-                    st.info(cache_status.message)
+                detail_industry_id = industry_labels[chosen_label]
+                detail_industry_name = str(member_map[detail_industry_id]["name"])
+                detail_constituents = constituents_for([detail_industry_id])
+                run_industry_sync = controls[2].button(
+                    "拉取近一年财报",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"{key_prefix}_sync_btn",
+                )
+                force_resync = st.checkbox(
+                    "忽略本地缓存，强制重新联网核对",
+                    value=False,
+                    key=f"{key_prefix}_force",
+                )
+                st.caption(
+                    f"点上面的按钮会先在本地检查「{detail_industry_name}」的 "
+                    f"{len(detail_constituents)} 家成份公司是否都已取得最新报告期数据："
+                    "齐全则不联网并提示，只缺哪几家就只补拉那几家。"
+                    "勾选上面的复选框可强制重新联网核对（仍不会重复解析已缓存的公告）。"
+                )
+
+            if run_industry_sync:
+                should_sync = False
+                targets: list[str] | None = None
+                if force_resync:
                     should_sync = True
-                    targets = list(cache_status.pending_ids) or None
                 else:
-                    st.success(cache_status.message)
-                    st.caption(
-                        "若怀疑公开渠道已披露更新的定期报告，勾选「忽略本地缓存，"
-                        "强制重新联网核对」再点一次。"
+                    cache_status = check_industry_cache(
+                        detail_industry_id, detail_as_of, lookback_days
                     )
-            if should_sync:
-                detail_progress = st.progress(0.0, text="准备拉取")
+                    if cache_status.needs_network:
+                        st.info(cache_status.message)
+                        should_sync = True
+                        targets = list(cache_status.pending_ids) or None
+                    else:
+                        st.success(cache_status.message)
+                if should_sync:
+                    detail_progress = st.progress(0.0, text="准备拉取")
 
-                def show_industry_progress(current: int, total: int, message: str) -> None:
-                    detail_progress.progress(current / max(total, 1), text=message)
+                    def show_industry_progress(current: int, total: int, message: str) -> None:
+                        detail_progress.progress(current / max(total, 1), text=message)
 
-                try:
-                    with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
-                        synced, industry_errors = sync_industry_reports(
-                            industry=detail_industry_id,
-                            as_of_date=detail_as_of,
-                            lookback_days=lookback_days,
-                            progress=show_industry_progress,
-                            company_ids=targets or None,
+                    try:
+                        with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
+                            synced, industry_errors = sync_industry_reports(
+                                industry=detail_industry_id,
+                                as_of_date=detail_as_of,
+                                lookback_days=lookback_days,
+                                progress=show_industry_progress,
+                                company_ids=targets or None,
+                            )
+                        detail_progress.progress(1.0, text="拉取完成")
+                        st.success(
+                            f"{detail_industry_name}：本地累计 {len(synced)} 条定期报告记录，"
+                            f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
                         )
-                    detail_progress.progress(1.0, text="拉取完成")
-                    st.success(
-                        f"{detail_industry_name}：本地累计 {len(synced)} 条定期报告记录，"
-                        f"覆盖 {synced['company_id'].nunique() if not synced.empty else 0} 家公司。"
-                    )
-                    if not industry_errors.empty:
-                        st.warning(f"有 {len(industry_errors)} 条检索或提取失败，请用命令行查看明细。")
-                    all_industry_financials = load_all_industry_financials()
-                except Exception as exc:
-                    st.error(f"拉取失败：{exc}")
+                        if not industry_errors.empty:
+                            st.warning(
+                                f"有 {len(industry_errors)} 条检索或提取失败，请用命令行查看明细。"
+                            )
+                        all_industry_financials = load_all_industry_financials()
+                    except Exception as exc:
+                        st.error(f"拉取失败：{exc}")
 
-        industry_raw = all_industry_financials[
-            all_industry_financials["industry_l3_id"].astype(str).eq(str(detail_industry_id))
-        ].copy()
-
-        if industry_raw.empty:
-            st.info(
-                f"{detail_industry_name} 还没有财报缓存。点击上方「拉取近一年财报」，"
-                f"或在命令行执行 `python online_cli.py industry sync --industry {detail_industry_id} "
-                f"--as-of {detail_as_of:%Y-%m-%d}`。"
-            )
-        else:
-            latest_announcement = pd.to_datetime(
-                industry_raw["announcement_date"], errors="coerce"
-            ).max()
-            st.caption(
-                f"本地已缓存 {len(industry_raw)} 条定期报告记录，覆盖 "
-                f"{industry_raw['company_id'].nunique()} 家公司，"
-                f"最新公告日 {latest_announcement:%Y-%m-%d}。"
-                "再次点击「拉取近一年财报」只会补拉新披露的公告，不会重复解析已有公告；"
-                "公司较多时耗时较长，建议改用命令行后台执行："
-                f"`python online_cli.py industry sync --industry {detail_industry_id} "
-                f"--as-of {detail_as_of:%Y-%m-%d}`"
-            )
-            period_options = available_report_periods(industry_raw, detail_as_of)
-            period_choice = st.selectbox(
-                "报告期",
-                options=["自动（最新共同报告期）", *period_options],
-                format_func=lambda value: (
-                    "自动（最新共同报告期）"
-                    if value == "自动（最新共同报告期）"
-                    else pd.Timestamp(value).strftime("%Y-%m-%d")
-                ),
-                key="detail_period_choice",
-            )
-            chosen_period = None if period_choice == "自动（最新共同报告期）" else period_choice
-            try:
-                industry_ranking, industry_notes = rank_industry_financials(
-                    industry_raw,
-                    as_of_date=detail_as_of,
-                    report_period=chosen_period,
-                    top_n=top_n,
-                    minimum_coverage=minimum_coverage,
+            industry_raw = all_industry_financials[
+                all_industry_financials["industry_l3_id"].astype(str).eq(str(detail_industry_id))
+            ].copy()
+            if industry_raw.empty:
+                st.info(
+                    f"{detail_industry_name} 还没有财报缓存。点击上方「拉取近一年财报」，"
+                    f"或在命令行执行 `python online_cli.py industry sync --industry "
+                    f"{detail_industry_id} --as-of {detail_as_of:%Y-%m-%d}`。"
                 )
-            except Exception as exc:
-                st.error(f"计算行业排名失败：{exc}")
-                industry_ranking = pd.DataFrame()
-                industry_notes = []
-            render_industry_ranking(
-                industry_ranking,
-                industry_notes,
-                as_of_date=detail_as_of,
-                sort_by=detail_sort_by,
-                download_label="下载该行业财报排名",
-                download_key="detail_ranking_download",
-            )
+            else:
+                latest_announcement = pd.to_datetime(
+                    industry_raw["announcement_date"], errors="coerce"
+                ).max()
+                st.caption(
+                    f"本地已缓存 {len(industry_raw)} 条定期报告记录，覆盖 "
+                    f"{industry_raw['company_id'].nunique()} 家公司，"
+                    f"最新公告日 {latest_announcement:%Y-%m-%d}。"
+                )
+                period_options = available_report_periods(industry_raw, detail_as_of)
+                period_choice = st.selectbox(
+                    "报告期",
+                    options=["自动（最新共同报告期）", *period_options],
+                    format_func=lambda value: (
+                        "自动（最新共同报告期）"
+                        if value == "自动（最新共同报告期）"
+                        else pd.Timestamp(value).strftime("%Y-%m-%d")
+                    ),
+                    key=f"{key_prefix}_period",
+                )
+                chosen_period = None if period_choice == "自动（最新共同报告期）" else period_choice
+                try:
+                    industry_ranking, industry_notes = rank_industry_financials(
+                        industry_raw,
+                        as_of_date=detail_as_of,
+                        report_period=chosen_period,
+                        top_n=top_n,
+                        minimum_coverage=minimum_coverage,
+                    )
+                except Exception as exc:
+                    st.error(f"计算行业排名失败：{exc}")
+                    industry_ranking = pd.DataFrame()
+                    industry_notes = []
+                render_industry_ranking(
+                    industry_ranking,
+                    industry_notes,
+                    as_of_date=detail_as_of,
+                    sort_by=detail_sort_by,
+                    download_label="下载该行业财报排名",
+                    download_key=f"detail_ranking_{key_prefix}",
+                )
 
-        if not detail_constituents.empty:
-            st.subheader(f"行业成分公司（{len(detail_constituents)} 家，公开快照 {SNAPSHOT_DATE}）")
-            st.dataframe(
-                detail_constituents.rename(
-                    columns={"company_id": "公司代码", "company_name": "公司名称", "include_date": "纳入时间"}
-                )[["公司代码", "公司名称", "纳入时间"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+            if not detail_constituents.empty:
+                st.subheader(
+                    f"行业成分公司（{len(detail_constituents)} 家，公开快照 {SNAPSHOT_DATE}）"
+                )
+                st.dataframe(
+                    detail_constituents.rename(
+                        columns={
+                            "company_id": "公司代码",
+                            "company_name": "公司名称",
+                            "include_date": "纳入时间",
+                        }
+                    )[["公司代码", "公司名称", "纳入时间"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        for tab_ctx, sector_title in zip(st.tabs(sector_titles), sector_titles):
+            with tab_ctx:
+                spec = sector_specs.get(sector_title, {})
+                featured = tuple(str(item) for item in spec.get("featured", ()))  # type: ignore[union-attr]
+                tab_focus_ids = [fid for fid in featured if fid in focus_id_set]
+                if tab_focus_ids:
+                    st.markdown("**重点子行业（已预拉取财报）**")
+                    subset = focus_ranking[
+                        focus_ranking["industry_l3_id"].astype(str).isin(tab_focus_ids)
+                    ]
+                    if subset.empty:
+                        st.info("这些子行业还没有可排名的财报缓存，可在下方逐个拉取。")
+                    else:
+                        render_industry_ranking(
+                            subset,
+                            focus_notes,
+                            as_of_date=detail_as_of,
+                            order={fid: position for position, fid in enumerate(tab_focus_ids)},
+                            group_titles=focus_group_titles,
+                            group_captions=focus_group_captions,
+                            sort_by=detail_sort_by,
+                            download_label="下载这些子行业的财报排名",
+                            download_key=f"focus_ranking_{sector_title}",
+                        )
+                    st.divider()
+                members = [
+                    member
+                    for member in sector_members[sector_title]
+                    if str(member["id"]) not in focus_id_set
+                ]
+                if not members:
+                    st.caption("该大类暂无已固化成分公司的子行业。")
+                    continue
+                st.markdown("**其余子行业（按需拉取）**")
+                render_sector_member_panel(
+                    members=members,
+                    featured=featured,
+                    key_prefix=f"sector_{sector_title}",
+                )
+
 
 with taxonomy_tab:
     st.caption(
