@@ -160,8 +160,9 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("石油石化", "基础化工"),
         "claimed_l3_ids": (),
         "featured": (),
-        # 全部统计局大类合并成一个框；各大类景气度以表后注释呈现
+        # 全部统计局大类合并成一个框（默认展开）；各大类景气度以表后注释呈现
         "merge_all_stats": True,
+        "stat_group_title": "石油化工",
     },
     {
         "title": "机械设备",

@@ -644,6 +644,7 @@ def render_stat_industry_block(
     show_constituents: bool = True,
     show_l3_table: bool = True,
     footer_notes: bool = False,
+    group_title: str | None = None,
 ) -> None:
     """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
@@ -682,10 +683,8 @@ def render_stat_industry_block(
                 f"{name}：景气度 {score}，利润增长 {profit_latest:.1f}%"
             )
     if footer_notes:
-        title = (
-            f"{len(stat_items)} 个统计局大类，对应 {len(industries)} 个申万三级行业"
-            "（景气度见表后注释）"
-        )
+        label = group_title or f"{len(stat_items)} 个统计局大类"
+        title = f"{label}，对应 {len(industries)} 个申万三级行业"
     else:
         title = "；".join(parts) + f"，对应 {len(industries)} 个申万三级行业"
     with st.expander(title, expanded=expanded):
@@ -1613,10 +1612,12 @@ with detail_tab:
                                 f"detail_{sector_title}_"
                                 + "_".join(str(item["stat_industry"]) for item in group)[:60]
                             ),
-                            # 电子通信 tab 只有一个大类，直接展开，不再要求点击
-                            expanded=compact_focus,
-                            # 成分公司选择与拉取按钮在下方「其余子行业」面板已有，此处不重复
-                            show_constituents=not compact_focus,
+                            # 电子通信 tab 只有一个大类，直接展开，不再要求点击；
+                            # 化工的合并大框同理默认展开，成分选择交给下方面板
+                            expanded=compact_focus or bool(spec.get("merge_all_stats")),
+                            show_constituents=not (
+                                compact_focus or bool(spec.get("merge_all_stats"))
+                            ),
                             # spec 指定的大类（如化学纤维）不在框内重复列三级行业
                             show_l3_table=not any(
                                 str(item["stat_industry"])
@@ -1624,6 +1625,7 @@ with detail_tab:
                                 for item in group
                             ),
                             footer_notes=bool(spec.get("merge_all_stats")),
+                            group_title=spec.get("stat_group_title"),  # type: ignore[arg-type]
                         )
                 st.divider()
                 if tab_focus_ids:
