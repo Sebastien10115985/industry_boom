@@ -85,6 +85,12 @@ MANUAL: dict[str, tuple[str, str]] = {
     "600528": ("850725", "能源及重型设备"),  # 中铁工业，盾构机
     "603960": ("850784", "其他自动化设备"),  # 克来机电，柔性自动化装备
     "688826": ("850783", "激光设备"),  # 频准激光
+    # ---- 基础化工表：官网名单内、乐咕未收录的零星公司（按主营业务归属）----
+    "300530": ("850339", "其他化学制品"),  # 领湃科技（原达志科技），表面工程化学品
+    "300716": ("850353", "改性塑料"),  # 泉为科技，改性再生塑料
+    "600889": ("850343", "粘胶"),  # 南京化纤，粘胶短纤
+    "603991": ("850353", "改性塑料"),  # 至正股份，电缆绝缘高分子材料
+    "688087": ("850351", "其他塑料制品"),  # 英科再生，PS 塑料再生制品
 }
 
 
@@ -120,42 +126,44 @@ def main() -> None:
     parts = [load_frame(name) for name in
              ("有色金属三级归属.csv", "国防军工三级归属.csv", "机械设备三级归属.csv",
               "医药生物三级归属.csv")]
-    new = pd.concat(parts, ignore_index=True)
-    new["company_id"] = new["company_id"].map(to_full)
-    new["company_name"] = new["company_name"].astype(str)
+    csv_new = pd.concat(parts, ignore_index=True)
+    csv_new["company_id"] = csv_new["company_id"].map(to_full)
+    csv_new["company_name"] = csv_new["company_name"].astype(str)
 
-    # 手工兜底：覆盖同名公司的旧归类，并补充未归属公司
+    # 手工兜底：归属 CSV 未覆盖的公司按主营业务补录；
+    # MANUAL 只做补录（append），不会把快照里已固化的同行公司挤掉
     official_names = load_company_names()
-    raw = new.set_index("company_id", drop=False)
+    manual_rows = []
     for code, (l3_id, l3_name) in MANUAL.items():
-        full_code = to_full(code)
-        raw = raw.drop(index=full_code, errors="ignore")
-        raw.loc[full_code] = {
+        manual_rows.append({
             "industry_l3_id": l3_id,
             "industry_l3_name": l3_name,
-            "company_id": full_code,
+            "company_id": to_full(code),
             "company_name": official_names.get(code, ""),
-            "include_date": "2026-11-06",
-        }
-    new = raw.reset_index(drop=True)
-    new = new.drop_duplicates(["industry_l3_id", "company_id"]).sort_values(
-        ["industry_l3_id", "company_id"]
-    ).reset_index(drop=True)
-    missing = new[new["company_name"].eq("")]
+            "include_date": "2026-11-09",
+        })
+    manual_frame = pd.DataFrame(manual_rows, columns=COLUMNS)
+    missing = manual_frame[manual_frame["company_name"].eq("")]
     if not missing.empty:
         raise SystemExit(f"缺少公司名，请检查: {missing['company_id'].tolist()}")
 
     old = pd.read_csv(CSV_PATH, dtype={"industry_l3_id": str, "company_id": str}, encoding="utf-8-sig")
-    covered = set(new["industry_l3_id"])
-    kept = old[~old["industry_l3_id"].isin(covered)]
+    covered = set(csv_new["industry_l3_id"])
+    manual_ids = set(manual_frame["company_id"])
+    # MANUAL 公司强制唯一归属（清除旧快照中的其它行业记录）；
+    # 归属 CSV 覆盖的行业整体替换，其余行业保留乐咕固化结果
+    kept = old[
+        ~old["company_id"].isin(manual_ids) & ~old["industry_l3_id"].isin(covered)
+    ]
     combined = (
-        pd.concat([kept[COLUMNS], new[COLUMNS]], ignore_index=True)
+        pd.concat([kept[COLUMNS], csv_new[COLUMNS], manual_frame[COLUMNS]], ignore_index=True)
         .drop_duplicates(["industry_l3_id", "company_id"])
         .sort_values(["industry_l3_id", "company_id"])
         .reset_index(drop=True)
     )
-    write_outputs(combined, "2026-11-06", int(combined["industry_l3_id"].nunique()))
-    print(f"并入 {len(new)} 条（覆盖 {new['industry_l3_id'].nunique()} 个三级行业）；"
+    write_outputs(combined, "2026-11-09", int(combined["industry_l3_id"].nunique()))
+    print(f"补录 {len(manual_frame)} 条 MANUAL；归属 CSV {len(csv_new)} 条"
+          f"（覆盖 {csv_new['industry_l3_id'].nunique()} 个三级行业）；"
           f"catalog 现有 {len(combined)} 条 / {combined['industry_l3_id'].nunique()} 个三级行业")
 
 
