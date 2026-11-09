@@ -643,12 +643,14 @@ def render_stat_industry_block(
     expanded: bool = True,
     show_constituents: bool = True,
     show_l3_table: bool = True,
+    footer_notes: bool = False,
 ) -> None:
     """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
     `stat_items` 是同一组的大类列表，对应三级行业取并集；
     `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）；
-    `show_l3_table=False` 时连三级行业清单也省略（组内行业已列在下方面板，避免重复）。
+    `show_l3_table=False` 时连三级行业清单也省略（组内行业已列在下方面板，避免重复）；
+    `footer_notes=True` 时标题只写大类数量，各大类景气度改为表格后文字注释。
     """
     industry_frames = [
         corresponding_industries(str(item["stat_industry"])) for item in stat_items
@@ -679,7 +681,13 @@ def render_stat_industry_block(
             parts.append(
                 f"{name}：景气度 {score}，利润增长 {profit_latest:.1f}%"
             )
-    title = "；".join(parts) + f"，对应 {len(industries)} 个申万三级行业"
+    if footer_notes:
+        title = (
+            f"{len(stat_items)} 个统计局大类，对应 {len(industries)} 个申万三级行业"
+            "（景气度见表后注释）"
+        )
+    else:
+        title = "；".join(parts) + f"，对应 {len(industries)} 个申万三级行业"
     with st.expander(title, expanded=expanded):
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
@@ -698,6 +706,8 @@ def render_stat_industry_block(
                 use_container_width=True,
                 hide_index=True,
             )
+            if footer_notes:
+                st.caption("；".join(parts))
         if show_l3_table and show_constituents:
             constituents = constituents_for(industries["industry_l3_id"])
             if constituents.empty:
@@ -1589,8 +1599,13 @@ with detail_tab:
                         "统计行业口径来自国家统计局，展开可见对应申万三级行业、"
                         "全部成分公司与该大类内排名靠前的公司；景气更新在「行业景气度」页签。"
                     )
-                    # 对应三级行业互为子集的大类（如有色采选 ⊂ 冶炼）合并成一个框
-                    for group in merge_stat_items(stat_items):
+                    # 对应三级行业互为子集的大类（如有色采选 ⊂ 冶炼）合并成一个框；
+                    # spec 指定 merge_all_stats 时（如化工）全部大类合并，景气度以表后注释呈现
+                    if spec.get("merge_all_stats"):
+                        stat_groups: list[list[dict[str, object]]] = [stat_items]
+                    else:
+                        stat_groups = merge_stat_items(stat_items)
+                    for group in stat_groups:
                         render_stat_industry_block(
                             stat_items=group,
                             ranking_frame=ranking,
@@ -1608,6 +1623,7 @@ with detail_tab:
                                 in spec.get("hide_stat_l3_tables", ())  # type: ignore[union-attr]
                                 for item in group
                             ),
+                            footer_notes=bool(spec.get("merge_all_stats")),
                         )
                 st.divider()
                 if tab_focus_ids:
