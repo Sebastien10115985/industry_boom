@@ -71,6 +71,12 @@ FOCUS_INDUSTRY_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "850935",  # 航海装备Ⅲ
         ),
     ),
+    (
+        "油气开采",
+        (
+            "859611",  # 油气开采Ⅲ
+        ),
+    ),
 )
 
 # 扁平化的展示顺序，供只关心顺序的场景使用
@@ -159,10 +165,12 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "title": "化工",
         "l1_names": ("石油石化", "基础化工"),
         "claimed_l3_ids": (),
-        "featured": (),
+        "featured": ("859611",),  # 油气开采Ⅲ
         # 全部统计局大类合并成一个框（默认展开）；各大类景气度以表后注释呈现
         "merge_all_stats": True,
         "stat_group_title": "石油化工",
+        # 基础化工等对应大类的全部三级行业补全到面板（无成分的标「暂无成分」）
+        "compact_focus": True,
     },
     {
         "title": "机械设备",
