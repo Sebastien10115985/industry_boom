@@ -471,6 +471,12 @@ def _industry_excel_bytes(ranking: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+# 个别行业的展示名（仅用于重点子行业卡片标题，不改行业目录）
+INDUSTRY_DISPLAY_NAMES: dict[str, str] = {
+    "857421": "航空装备Ⅲ（大飞机）",
+}
+
+
 def render_industry_group(
     group: pd.DataFrame,
     industry_key: str,
@@ -479,7 +485,9 @@ def render_industry_group(
 ) -> None:
     """渲染单个三级行业的排名卡片（指标、明细表、缺漏提示）。"""
     group = group.sort_values("industry_rank", na_position="last")
-    group_name = str(group["industry_l3_name"].iloc[0])
+    group_name = INDUSTRY_DISPLAY_NAMES.get(industry_key) or str(
+        group["industry_l3_name"].iloc[0]
+    )
     group_period = pd.to_datetime(group["report_period"], errors="coerce").max()
     group_model = str(group["rank_model_label"].iloc[0])
     missing = group[~group["eligible"]]
