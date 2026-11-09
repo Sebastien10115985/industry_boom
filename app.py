@@ -23,6 +23,9 @@ from industry_pipeline import (
     check_industry_cache,
     focus_industry_groups,
     focus_industries,
+    l2_focus_l3_map,
+    l2_focus_names,
+    l2_group_l3_ids,
     load_all_industry_financials,
     rank_industry_financials,
     sync_industry_reports,
@@ -523,7 +526,10 @@ def render_industry_group(
                 "应打开原公告人工复核后再使用（见「公告证据」页签）。"
             )
         covered_ids = set(group["company_id"].astype(str))
-        group_constituents = constituents_for([industry_key])
+        # 二级聚合行业（如工业金属）的成分 = 组内全部三级行业成分之和
+        group_constituents = constituents_for(
+            list(l2_group_l3_ids().get(industry_key, (industry_key,)))
+        )
         absent = group_constituents[
             ~group_constituents["company_id"].astype(str).isin(covered_ids)
         ]
@@ -1197,9 +1203,22 @@ with detail_tab:
 
         # ---------- 按统计局制造业大类分 tab：重点子行业 + 其余子行业按需拉取 ----------
         st.caption(UNIT_CAPTION)
+        # 三级公司太少的行业按二级聚合（如工业金属=铝+铜+铅锌）作为一个重点子行业排名
+        l2_l3_map = l2_focus_l3_map()
+        l2_names = l2_focus_names()
+        l2_group_ids = l2_group_l3_ids()
+        l2_l3_ids = set(l2_l3_map)
         focus_raw = all_industry_financials[
-            all_industry_financials["industry_l3_id"].astype(str).isin(focus_ids)
+            all_industry_financials["industry_l3_id"].astype(str).isin(focus_ids + list(l2_l3_ids))
         ].copy()
+        l2_mask = focus_raw["industry_l3_id"].astype(str).isin(l2_l3_ids)
+        focus_raw.loc[l2_mask, "industry_l3_id"] = focus_raw.loc[
+            l2_mask, "industry_l3_id"
+        ].astype(str).map(lambda value: l2_l3_map[value][1])
+        focus_raw.loc[l2_mask, "industry_l3_name"] = focus_raw.loc[
+            l2_mask, "industry_l3_id"
+        ].map(lambda value: l2_names.get(value, value))
+        focus_id_set = {str(item) for item in focus_ids} | set(l2_names)
         focus_ranking = pd.DataFrame()
         focus_notes: list[str] = []
         if not focus_raw.empty:
@@ -1220,7 +1239,6 @@ with detail_tab:
                 catalog_frame["industry_l1_name"].astype(str),
             )
         )
-        focus_id_set = {str(item) for item in focus_ids}
         sector_titles = [str(spec["title"]) for spec in DETAIL_SECTOR_TABS] + ["其它行业"]
         sector_specs = {str(spec["title"]): spec for spec in DETAIL_SECTOR_TABS}
 
@@ -1240,8 +1258,8 @@ with detail_tab:
         member_ids: set[str] = set()
 
         def add_member(l3_id: str, name: str, count: int) -> None:
-            """登记一个三级行业；同一行业只登记一次。"""
-            if l3_id in member_ids:
+            """登记一个三级行业；同一行业只登记一次，二级聚合的行业不进面板。"""
+            if l3_id in member_ids or l3_id in l2_l3_ids:
                 return
             member_ids.add(l3_id)
             sector_members[claim_tab(l3_id)].append(
@@ -1278,6 +1296,8 @@ with detail_tab:
                     # 只有紧凑 tab（电子通信/创新药）补全到全部对应行业，
                     # 其它 tab 仍只列已有成分快照的行业，避免下拉里堆满不可用项
                     if not sector_specs.get(claim, {}).get("compact_focus"):
+                        continue
+                    if l3_id in l2_l3_ids:
                         continue
                     if l3_id in member_ids or l3_id in pending_members:
                         continue
@@ -1597,25 +1617,32 @@ with detail_tab:
                         refreshed_industries: list[str] = []
                         refresh_error_count = 0
                         for position, focus_id in enumerate(tab_focus_ids, start=1):
-                            focus_name = coverage_name_by_id.get(focus_id, focus_id)
+                            group_l3_ids = l2_group_ids.get(focus_id)
+                            focus_name = (
+                                l2_names.get(focus_id)
+                                or coverage_name_by_id.get(focus_id, focus_id)
+                            )
                             focus_refresh_progress.progress(
                                 (position - 1) / len(tab_focus_ids),
                                 text=f"核对 {focus_name}（{position}/{len(tab_focus_ids)}）",
                             )
-                            status = check_industry_cache(focus_id, detail_as_of, lookback_days)
-                            if not status.needs_network:
-                                continue
-                            try:
-                                _, industry_errors = sync_industry_reports(
-                                    industry=focus_id,
-                                    as_of_date=detail_as_of,
-                                    lookback_days=lookback_days,
-                                    company_ids=list(status.pending_ids) or None,
-                                )
-                                refreshed_industries.append(str(focus_name))
-                                refresh_error_count += len(industry_errors)
-                            except Exception as exc:
-                                st.warning(f"{focus_name} 刷新失败：{exc}")
+                            # 二级聚合行业逐三级核对刷新；普通行业按单个行业核对
+                            for l3_id in group_l3_ids or (focus_id,):
+                                status = check_industry_cache(l3_id, detail_as_of, lookback_days)
+                                if not status.needs_network:
+                                    continue
+                                try:
+                                    _, industry_errors = sync_industry_reports(
+                                        industry=l3_id,
+                                        as_of_date=detail_as_of,
+                                        lookback_days=lookback_days,
+                                        company_ids=list(status.pending_ids) or None,
+                                    )
+                                    if str(focus_name) not in refreshed_industries:
+                                        refreshed_industries.append(str(focus_name))
+                                    refresh_error_count += len(industry_errors)
+                                except Exception as exc:
+                                    st.warning(f"{focus_name} 刷新失败：{exc}")
                         focus_refresh_progress.progress(1.0, text="刷新完成")
                         if refreshed_industries:
                             tail = (

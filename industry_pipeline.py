@@ -78,6 +78,32 @@ AI_FOCUS_INDUSTRIES: tuple[str, ...] = tuple(
     industry_id for _, industry_ids in FOCUS_INDUSTRY_GROUPS for industry_id in industry_ids
 )
 
+# 三级行业公司太少时，按二级行业聚合作为一个重点子行业排名（组名=二级名）
+# 每项：(二级展示名, 二级行业 ID, 包含的三级行业 ID)
+L2_FOCUS_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("工业金属", "801055", ("850551", "850552", "850553")),  # 铝、铜、铅锌
+    ("能源金属", "801056", ("850543", "850561", "850562")),  # 锂、钴、镍
+)
+
+
+def l2_focus_l3_map() -> dict[str, tuple[str, str]]:
+    """三级行业 ID -> (二级展示名, 二级行业 ID)，供聚合排名与面板排除使用。"""
+    mapping: dict[str, tuple[str, str]] = {}
+    for display_name, l2_id, l3_ids in L2_FOCUS_GROUPS:
+        for l3_id in l3_ids:
+            mapping[l3_id] = (display_name, l2_id)
+    return mapping
+
+
+def l2_focus_names() -> dict[str, str]:
+    """二级行业 ID -> 展示名。"""
+    return {l2_id: display_name for display_name, l2_id, _ in L2_FOCUS_GROUPS}
+
+
+def l2_group_l3_ids() -> dict[str, tuple[str, ...]]:
+    """二级行业 ID -> 组内三级行业 ID，供聚合查询成分与逐三级刷新。"""
+    return {l2_id: l3_ids for _, l2_id, l3_ids in L2_FOCUS_GROUPS}
+
 # 「行业详情」页按统计局制造业大类拆成子 tab：
 # - title：tab 标题
 # - l1_names：该 tab 认领的申万一级行业
@@ -104,7 +130,8 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "title": "有色金属",
         "l1_names": ("有色金属",),
         "claimed_l3_ids": (),
-        "featured": ("850543", "850531", "850552"),  # 锂、黄金、铜
+        # 重点子行业按二级聚合：工业金属（铝+铜+铅锌）、能源金属（锂+钴+镍）
+        "featured": ("801055", "801056"),
         # 冶炼/采选两个大类合并成一个框，默认展开；成分公司选择走下方面板
         "compact_focus": True,
     },

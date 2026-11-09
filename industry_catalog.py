@@ -286,7 +286,18 @@ def attach_catalog(data: pd.DataFrame) -> pd.DataFrame:
         else pd.Series("", index=frame.index)
     )
 
+    # 按二级聚合的重点子行业（如工业金属=铝+铜+铅锌）不在三级目录里，直接认可其 ID
+    try:
+        from industry_pipeline import l2_focus_names
+
+        l2_display = l2_focus_names()
+    except Exception:  # noqa: BLE001
+        l2_display = {}
     unmatched = ~ids.isin(lookup.index)
+    if l2_display:
+        l2_ok = ids.isin(set(l2_display))
+        names = names.mask(l2_ok & names.eq(""), ids.map(l2_display))
+        unmatched = unmatched & ~l2_ok
     if unmatched.any() and names.ne("").any():
         mapped = map_industry_names(names[unmatched])
         ids = ids.mask(unmatched, mapped["industry_l3_id"])
