@@ -160,6 +160,8 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("石油石化", "基础化工"),
         "claimed_l3_ids": (),
         "featured": (),
+        # 该大类对应的三级行业与下方面板重复，框内不再列出（只留排名靠前公司）
+        "hide_stat_l3_tables": ("化学纤维制造业",),
     },
     {
         "title": "机械设备",

@@ -642,11 +642,13 @@ def render_stat_industry_block(
     key_suffix: str,
     expanded: bool = True,
     show_constituents: bool = True,
+    show_l3_table: bool = True,
 ) -> None:
     """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
     `stat_items` 是同一组的大类列表，对应三级行业取并集；
-    `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）。
+    `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）；
+    `show_l3_table=False` 时连三级行业清单也省略（组内行业已列在下方面板，避免重复）。
     """
     industry_frames = [
         corresponding_industries(str(item["stat_industry"])) for item in stat_items
@@ -682,20 +684,21 @@ def render_stat_industry_block(
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
             return
-        st.dataframe(
-            industries.rename(
-                columns={
-                    "industry_l3_id": "三级行业ID",
-                    "industry_l3_name": "三级行业",
-                    "industry_l2_name": "二级行业",
-                    "industry_l1_name": "一级行业",
-                    "company_count": "成分公司数",
-                }
-            )[["三级行业ID", "三级行业", "二级行业", "一级行业", "成分公司数"]],
-            use_container_width=True,
-            hide_index=True,
-        )
-        if show_constituents:
+        if show_l3_table:
+            st.dataframe(
+                industries.rename(
+                    columns={
+                        "industry_l3_id": "三级行业ID",
+                        "industry_l3_name": "三级行业",
+                        "industry_l2_name": "二级行业",
+                        "industry_l1_name": "一级行业",
+                        "company_count": "成分公司数",
+                    }
+                )[["三级行业ID", "三级行业", "二级行业", "一级行业", "成分公司数"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+        if show_l3_table and show_constituents:
             constituents = constituents_for(industries["industry_l3_id"])
             if constituents.empty:
                 st.caption(
@@ -1599,6 +1602,12 @@ with detail_tab:
                             expanded=compact_focus,
                             # 成分公司选择与拉取按钮在下方「其余子行业」面板已有，此处不重复
                             show_constituents=not compact_focus,
+                            # spec 指定的大类（如化学纤维）不在框内重复列三级行业
+                            show_l3_table=not any(
+                                str(item["stat_industry"])
+                                in spec.get("hide_stat_l3_tables", ())  # type: ignore[union-attr]
+                                for item in group
+                            ),
                         )
                 st.divider()
                 if tab_focus_ids:
