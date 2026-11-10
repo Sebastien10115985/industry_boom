@@ -256,12 +256,6 @@ if ranking.empty:
     st.warning("当前截止日与报告期组合没有可排名公司。")
     st.stop()
 
-small_industries = (
-    ranking.loc[ranking["industry_company_count"].lt(5), "industry_l3_name"].dropna().unique().tolist()
-)
-if small_industries:
-    st.warning(f"以下行业样本少于 5 家，相对排名稳定性较弱：{'、'.join(map(str, small_industries))}")
-
 all_industry_financials = load_all_industry_financials()
 
 DISPLAY_COLUMNS = [
