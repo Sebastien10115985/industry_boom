@@ -197,10 +197,21 @@ def attach_financing_dividend(
         }
     )
     keep = ["company_id", "financing_total", "dividend_total", "funding_dividend_ratio"]
-    merged = frame.merge(
-        cache[keep].astype({"company_id": str}),
-        on="company_id",
+    cache = cache[keep].copy()
+    # 两边代码口径统一成 6 位数字：缓存存 600519，排名表可能是 600519.SH
+    cache["company_id"] = (
+        cache["company_id"].astype(str).str.split(".").str[0].str.zfill(6)
+    )
+    merged = frame.copy()
+    merged["_join_code"] = (
+        merged["company_id"].astype(str).str.split(".").str[0].str.zfill(6)
+    )
+    cache_join = cache.rename(columns={"company_id": "_cache_code"})
+    merged = merged.merge(
+        cache_join,
+        left_on="_join_code",
+        right_on="_cache_code",
         how="left",
         validate="many_to_one",
     )
-    return merged
+    return merged.drop(columns=["_join_code", "_cache_code"])
