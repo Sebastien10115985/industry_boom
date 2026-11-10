@@ -89,25 +89,29 @@ def fetch_financing_dividend(company_id: object, company_name: str = "") -> dict
     # 首发：IPO 募资总额（亿元），查不到时按 0 处理（部分老股/转板股无记录）
     listing_date = ""
     if requests is not None:
-        try:
-            response = requests.get(
-                IPO_URL,
-                params={
-                    "reportName": "RPTA_APP_IPOAPPLY",
-                    "columns": "ALL",
-                    "filter": '(SECURITY_CODE="' + code + '")',
-                    "pageNumber": "1",
-                    "pageSize": "1",
-                },
-                headers={"User-Agent": "Mozilla/5.0 (compatible; IndustryResearchTool/1.0)"},
-                timeout=20,
-            )
-            rows = (response.json().get("result") or {}).get("data") or []
-            if rows:
-                total_funding += float(rows[0].get("TOTAL_RAISE_FUNDS") or 0) * 1e8
-                listing_date = str(rows[0].get("LISTING_DATE") or "")[:10]
-        except Exception:  # noqa: BLE001 - IPO 记录缺失不影响另两项
-            pass
+        # datacenter 接口对高频请求会限流，失败退避重试两次
+        for attempt in range(3):
+            try:
+                response = requests.get(
+                    IPO_URL,
+                    params={
+                        "reportName": "RPTA_APP_IPOAPPLY",
+                        "columns": "ALL",
+                        "filter": '(SECURITY_CODE="' + code + '")',
+                        "pageNumber": "1",
+                        "pageSize": "1",
+                    },
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; IndustryResearchTool/1.0)"},
+                    timeout=20,
+                )
+                rows = (response.json().get("result") or {}).get("data") or []
+                if rows:
+                    total_funding += float(rows[0].get("TOTAL_RAISE_FUNDS") or 0) * 1e8
+                    listing_date = str(rows[0].get("LISTING_DATE") or "")[:10]
+                break
+            except Exception:  # noqa: BLE001 - IPO 记录缺失不影响另两项
+                if attempt < 2:
+                    time.sleep(1.0 + attempt)
 
     ratio = None
     if total_funding > 0:
@@ -122,6 +126,73 @@ def fetch_financing_dividend(company_id: object, company_name: str = "") -> dict
         "update_date": date.today().isoformat(),
         "source": SOURCE,
     }
+
+
+PUSH2_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+PUSH2_BATCH_SIZE = 50
+
+
+def _push2_listing_dates(company_ids: list[str]) -> dict[str, str]:
+    """行情批量接口取上市日期（f26），一次最多 50 家。
+
+    datacenter 的 IPO 单查接口限流严重，批量跑批用它兜底补上市日期。
+    """
+    result: dict[str, str] = {}
+    if requests is None:
+        return result
+    secids: list[str] = []
+    for item in company_ids:
+        code = str(item).split(".")[0]
+        market = "1" if code.startswith(("6", "9", "5")) else "0"
+        secids.append(market + "." + code)
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; IndustryResearchTool/1.0)"}
+    for start in range(0, len(secids), PUSH2_BATCH_SIZE):
+        batch = secids[start : start + PUSH2_BATCH_SIZE]
+        try:
+            response = requests.get(
+                PUSH2_URL,
+                params={
+                    "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+                    "fields": "f12,f26",
+                    "secids": ",".join(batch),
+                    "fltt": "2",
+                },
+                headers=headers,
+                timeout=20,
+            )
+            diff = ((response.json().get("data") or {}).get("diff")) or []
+            for entry in diff:
+                raw = str(entry.get("f26") or "")
+                digits = raw.split(".")[0]
+                if len(digits) == 8 and digits.isdigit():
+                    result[str(entry.get("f12"))] = (
+                        digits[:4] + "-" + digits[4:6] + "-" + digits[6:]
+                    )
+        except Exception:  # noqa: BLE001 - 批量失败只影响本批日期
+            continue
+        time.sleep(0.3)
+    return result
+
+
+def refresh_listing_dates(frame: pd.DataFrame, progress=None) -> pd.DataFrame:
+    """为缺上市日期的缓存行批量补齐（push2 行情接口，按公司代码匹配）。"""
+    mask = frame["listing_date"].isna() | frame["listing_date"].astype(str).str.strip().eq("")
+    missing = frame.loc[mask, "company_id"].astype(str).tolist()
+    if not missing:
+        return frame
+    if progress:
+        progress(0, len(missing), "批量补齐上市日期")
+    found = _push2_listing_dates(missing)
+    if found:
+        def _fill(code: str) -> str:
+            return found.get(str(code).split(".")[0], "")
+        fill_mask = mask & frame["company_id"].astype(str).map(
+            lambda code: str(code).split(".")[0] in found
+        )
+        frame.loc[fill_mask, "listing_date"] = frame.loc[
+            fill_mask, "company_id"
+        ].map(_fill)
+    return frame
 
 
 def load_financing_dividend(path: Path | str | None = None) -> pd.DataFrame:
@@ -169,13 +240,16 @@ def sync_financing_dividend(
         row = known.get(key)
         if refresh or row is None or str(row.update_date) < stale_cutoff:
             todo.append(key)
-        elif not str(getattr(row, "listing_date", "") or ""):
-            # 旧版缓存缺上市日期，重拉一次补齐
+        elif pd.isna(getattr(row, "listing_date", None)) or not str(
+            getattr(row, "listing_date", "") or ""
+        ).strip():
+            # 旧版缓存缺上市日期（含 NaN），重拉一次补齐
             todo.append(key)
     todo = list(dict.fromkeys(todo))
 
     if todo:
         new_rows: list[dict] = []
+        failures: list[str] = []
         for position, code in enumerate(todo, start=1):
             if progress:
                 label = names.get(code, "") if names else ""
@@ -184,9 +258,13 @@ def sync_financing_dividend(
                 new_rows.append(
                     fetch_financing_dividend(code, names.get(code, "") if names else "")
                 )
-            except Exception:  # noqa: BLE001 - 单家失败不阻断整批
-                pass
+            except Exception as exc:  # noqa: BLE001 - 单家失败不阻断整批
+                failures.append(code + ": " + str(exc)[:120])
+                if len(failures) <= 3:
+                    print("拉取失败 " + code + ": " + str(exc)[:120], flush=True)
             time.sleep(REQUEST_GAP_SECONDS)
+        if failures:
+            print(f"本次失败 {len(failures)} 家", flush=True)
         if new_rows:
             cache = pd.concat([cache, pd.DataFrame(new_rows)], ignore_index=True)
             # 同一公司只保留最新一条
