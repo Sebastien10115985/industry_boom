@@ -7,7 +7,8 @@
 三项指标：
 - 历史融资总额 = IPO 募资 + 增发净募资 + 配股募资（元）；
 - 历史分红总额 = 历年实施分红合计（元）；
-- 融资分红比 = 融资总额 / 分红总额（越大说明从市场拿得多、回报得少）。
+- 分红融资比 = 分红总额 / 融资总额（越小说明从市场拿得多、回报得少，<1 表示拿的比还的多）；
+- 上市日期：用于「上市满 10 年且分红融资比 < 1」的灰化提示。
 
 缓存文件：`data/financing_dividend.csv`。此类数据变化极低频（分红按年实施），
 缓存默认 90 天有效；页面展示只读缓存，联网拉取走命令行或财报同步流程。
@@ -39,7 +40,8 @@ COLUMNS = [
     "company_name",
     "total_funding",
     "total_dividend",
-    "funding_dividend_ratio",
+    "dividend_funding_ratio",
+    "listing_date",
     "update_date",
     "source",
 ]
@@ -85,6 +87,7 @@ def fetch_financing_dividend(company_id: object, company_name: str = "") -> dict
         total_funding += float(row.get("TOTAL_RAISE_FUNDS") or 0)
 
     # 首发：IPO 募资总额（亿元），查不到时按 0 处理（部分老股/转板股无记录）
+    listing_date = ""
     if requests is not None:
         try:
             response = requests.get(
@@ -102,25 +105,39 @@ def fetch_financing_dividend(company_id: object, company_name: str = "") -> dict
             rows = (response.json().get("result") or {}).get("data") or []
             if rows:
                 total_funding += float(rows[0].get("TOTAL_RAISE_FUNDS") or 0) * 1e8
+                listing_date = str(rows[0].get("LISTING_DATE") or "")[:10]
         except Exception:  # noqa: BLE001 - IPO 记录缺失不影响另两项
             pass
 
     ratio = None
-    if total_dividend > 0:
-        ratio = round(total_funding / total_dividend, 4)
+    if total_funding > 0:
+        ratio = round(total_dividend / total_funding, 4)
     return {
         "company_id": code,
         "company_name": company_name,
         "total_funding": total_funding,
         "total_dividend": total_dividend,
-        "funding_dividend_ratio": ratio,
+        "dividend_funding_ratio": ratio,
+        "listing_date": listing_date,
         "update_date": date.today().isoformat(),
         "source": SOURCE,
     }
 
 
 def load_financing_dividend(path: Path | str | None = None) -> pd.DataFrame:
-    return pd.read_csv(path or DEFAULT_CACHE_PATH, dtype={"company_id": str})
+    frame = pd.read_csv(path or DEFAULT_CACHE_PATH, dtype={"company_id": str})
+    # 旧版缓存只有融资分红比（融资/分红），换算成分红/融资并补空上市日期
+    if "dividend_funding_ratio" not in frame.columns:
+        if "funding_dividend_ratio" in frame.columns:
+            old = pd.to_numeric(frame["funding_dividend_ratio"], errors="coerce")
+            frame["dividend_funding_ratio"] = old.map(
+                lambda v: round(1 / v, 4) if pd.notna(v) and v > 0 else None
+            )
+        else:
+            frame["dividend_funding_ratio"] = None
+    if "listing_date" not in frame.columns:
+        frame["listing_date"] = ""
+    return frame
 
 
 def sync_financing_dividend(
@@ -151,6 +168,9 @@ def sync_financing_dividend(
         key = str(item).split(".")[0]
         row = known.get(key)
         if refresh or row is None or str(row.update_date) < stale_cutoff:
+            todo.append(key)
+        elif not str(getattr(row, "listing_date", "") or ""):
+            # 旧版缓存缺上市日期，重拉一次补齐
             todo.append(key)
     todo = list(dict.fromkeys(todo))
 
@@ -196,7 +216,7 @@ def attach_financing_dividend(
             "funding_dividend_ratio": "funding_dividend_ratio",
         }
     )
-    keep = ["company_id", "financing_total", "dividend_total", "funding_dividend_ratio"]
+    keep = ["company_id", "financing_total", "dividend_total", "dividend_funding_ratio", "listing_date"]
     cache = cache[keep].copy()
     # 两边代码口径统一成 6 位数字：缓存存 600519，排名表可能是 600519.SH
     cache["company_id"] = (

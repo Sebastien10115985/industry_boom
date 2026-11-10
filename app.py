@@ -428,7 +428,7 @@ INDUSTRY_DETAIL_COLUMNS = [
     "weighted_score",
     "financing_total",
     "dividend_total",
-    "funding_dividend_ratio",
+    "dividend_funding_ratio",
     "data_coverage",
     "report_period",
     "announcement_date",
@@ -448,7 +448,7 @@ INDUSTRY_DETAIL_LABELS = {
     "weighted_score": "综合得分",
     "financing_total": "历史融资(亿元)",
     "dividend_total": "累计分红(亿元)",
-    "funding_dividend_ratio": "融资分红比",
+    "dividend_funding_ratio": "分红融资比",
     "data_coverage": "数据完整度",
     "report_period": "报告期",
     "announcement_date": "公告日",
@@ -466,6 +466,29 @@ def industry_display_frame(frame: pd.DataFrame, sort_by: str | None = None) -> p
     if "公告原文" in shown:
         shown["公告原文"] = shown["公告原文"].fillna("")
     return shown
+
+
+def _low_return_grey_mask(group: pd.DataFrame, index) -> pd.Series:
+    """上市满 10 年且分红融资比 < 1 的公司行（整行灰化提示分红回报不足）。"""
+    ratio = pd.to_numeric(group.get("dividend_funding_ratio"), errors="coerce")
+    listing = pd.to_datetime(group.get("listing_date"), errors="coerce")
+    ten_years_ago = pd.Timestamp.today() - pd.DateOffset(years=10)
+    grey = listing.notna() & listing.lt(ten_years_ago) & ratio.lt(1)
+    return grey.reindex(index).fillna(False)
+
+
+def _grey_low_payers(shown: pd.DataFrame, group: pd.DataFrame):
+    """给需要灰化的行整行加灰色文字样式，其余保持原样。"""
+    grey = _low_return_grey_mask(group, shown.index)
+    if not grey.any():
+        return shown
+
+    def _style(row: pd.Series) -> list[str]:
+        if bool(grey.loc[row.name]):
+            return ["color: #9e9e9e;"] * len(row)
+        return [""] * len(row)
+
+    return shown.style.apply(_style, axis=1)
 
 
 def _industry_excel_bytes(ranking: pd.DataFrame) -> bytes:
@@ -518,10 +541,12 @@ def render_industry_group(
                 "亏损收窄与盈利增长可以同尺度比较，避免上年同期为负时同比失真。"
             )
         st.dataframe(
-            industry_display_frame(group, sort_by),
+            _grey_low_payers(industry_display_frame(group, sort_by), group),
             use_container_width=True,
             hide_index=True,
         )
+        if _low_return_grey_mask(group, group.index).any():
+            st.caption("灰色行：上市满 10 年且分红融资比低于 1，累计分红仍低于历史融资总额。")
         low_confidence = group[
             pd.to_numeric(group.get("extraction_confidence"), errors="coerce").lt(2 / 3)
         ]
