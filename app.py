@@ -429,6 +429,7 @@ INDUSTRY_DETAIL_COLUMNS = [
     "financing_total",
     "dividend_total",
     "dividend_funding_ratio",
+    "listing_date",
     "data_coverage",
     "report_period",
     "announcement_date",
@@ -449,6 +450,7 @@ INDUSTRY_DETAIL_LABELS = {
     "financing_total": "历史融资(亿元)",
     "dividend_total": "累计分红(亿元)",
     "dividend_funding_ratio": "分红融资比",
+    "listing_date": "上市日期",
     "data_coverage": "数据完整度",
     "report_period": "报告期",
     "announcement_date": "公告日",
@@ -463,6 +465,8 @@ def industry_display_frame(frame: pd.DataFrame, sort_by: str | None = None) -> p
     columns = [column for column in INDUSTRY_DETAIL_COLUMNS if column in prepared.columns]
     shown = prepared[columns].rename(columns=INDUSTRY_DETAIL_LABELS)
     shown = apply_display_units(shown)
+    if "上市日期" in shown:
+        shown["上市日期"] = shown["上市日期"].fillna("").astype(str).str.slice(0, 10)
     if "公告原文" in shown:
         shown["公告原文"] = shown["公告原文"].fillna("")
     return shown
