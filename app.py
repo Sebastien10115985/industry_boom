@@ -691,8 +691,8 @@ def render_stat_industry_block(
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
             return
-        if footer_notes and not show_l3_table:
-            # 行业表已移到下方面板时，景气度注释放在框内顶部
+        if footer_notes:
+            # 各大类景气度统一放在框内顶部，紧接注释列出三级行业清单
             st.caption("；".join(parts))
         if show_l3_table:
             st.dataframe(
@@ -708,8 +708,6 @@ def render_stat_industry_block(
                 use_container_width=True,
                 hide_index=True,
             )
-            if footer_notes:
-                st.caption("；".join(parts))
         if show_l3_table and show_constituents:
             constituents = constituents_for(industries["industry_l3_id"])
             if constituents.empty:

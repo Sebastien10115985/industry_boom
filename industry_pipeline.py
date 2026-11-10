@@ -187,10 +187,9 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("机械设备",),
         "claimed_l3_ids": (),
         "featured": ("850781", "850771", "850782"),  # 机器人、工程机械整机、工控设备
-        # 全部统计局大类合并成一个框（默认展开）；景气度以表后注释呈现，
-        # 三级行业清单全部移到下方面板（框内不列表）
+        # 全部统计局大类合并成一个框（默认展开）；景气度注释在框顶，
+        # 三级行业清单在注释下方列出，成分公司选择走下方面板
         "merge_all_stats": True,
-        "hide_stat_l3_all": True,
         "compact_focus": True,
     },
 )
