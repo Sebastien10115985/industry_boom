@@ -646,7 +646,6 @@ def render_stat_industry_block(
     footer_notes: bool = False,
     group_title: str | None = None,
     extra_industries: pd.DataFrame | None = None,
-    extra_notes: list[str] | None = None,
 ) -> None:
     """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
@@ -654,7 +653,7 @@ def render_stat_industry_block(
     `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）；
     `show_l3_table=False` 时连三级行业清单也省略（组内行业已列在下方面板，避免重复）；
     `footer_notes=True` 时标题只写大类数量，各大类景气度改为表格后文字注释；
-    `extra_industries`/`extra_notes` 补充归属其它大类的行业与景气度（如军工电子Ⅲ）。
+    `extra_industries` 补充归属其它大类的行业（如军工电子Ⅲ，不借入其大类景气度）。
     """
     industry_frames = [
         corresponding_industries(str(item["stat_industry"])) for item in stat_items
@@ -687,8 +686,6 @@ def render_stat_industry_block(
             parts.append(
                 f"{name}：景气度 {score}，利润增长 {profit_latest:.1f}%"
             )
-    if extra_notes:
-        parts.extend(extra_notes)
     if footer_notes:
         label = group_title or f"{len(stat_items)} 个统计局大类"
         title = f"{label}，对应 {len(industries)} 个申万三级行业"
@@ -1614,37 +1611,14 @@ with detail_tab:
                         stat_groups = merge_stat_items(stat_items)
                     # 归属其它 tab 的统计大类（如军工电子Ⅲ 所在大类归了电子通信）
                     # 补进本 tab 的框：行业清单只取 extra_l3_ids 指定的行业
-                    extra_names = tuple(spec.get("extra_stat_industries") or ())  # type: ignore[union-attr]
+                    # （只补行业，不借入其它大类的景气度注释）
+                    keep_ids = {str(item) for item in (spec.get("extra_l3_ids") or ())}  # type: ignore[union-attr]
                     extra_industries = None
-                    extra_notes = None
-                    if extra_names:
-                        # extra 大类的映射里没有这些行业（如军工电子Ⅲ），
-                        # 直接从行业目录按 ID 取完整记录
-                        keep_ids = {str(item) for item in (spec.get("extra_l3_ids") or ())}  # type: ignore[union-attr]
+                    if keep_ids:
                         catalog_frame = builtin_industry_frame()
                         extra_industries = catalog_frame[
                             catalog_frame["industry_l3_id"].astype(str).isin(keep_ids)
                         ].copy()
-                        extra_notes = []
-                        for record in (
-                            item for items in stat_records.values() for item in items
-                        ):
-                            if str(record["stat_industry"]) not in extra_names:
-                                continue
-                            score = record["score"]
-                            profit = record["profit_latest"]
-                            name = str(record["stat_industry"])
-                            if profit is not None:
-                                extra_notes.append(
-                                    f"{name}：景气度 {score if score is not None else '—'}，"
-                                    f"利润增长 {profit:.1f}%"
-                                )
-                            elif score is None:
-                                extra_notes.append(f"{name}：统计局暂无月度景气数据")
-                            else:
-                                extra_notes.append(
-                                    f"{name}：景气度 {score}，利润增长 {profit:.1f}%"
-                                )
                     for group in stat_groups:
                         render_stat_industry_block(
                             stat_items=group,
@@ -1672,7 +1646,6 @@ with detail_tab:
                             footer_notes=bool(spec.get("merge_all_stats")),
                             group_title=spec.get("stat_group_title"),  # type: ignore[arg-type]
                             extra_industries=extra_industries,
-                            extra_notes=extra_notes,
                         )
                 st.divider()
                 if tab_focus_ids:
