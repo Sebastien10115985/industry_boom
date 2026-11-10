@@ -646,6 +646,8 @@ def render_stat_industry_block(
     footer_notes: bool = False,
     group_title: str | None = None,
     extra_industries: pd.DataFrame | None = None,
+    extra_group_label: str | None = None,
+    extra_group_count: int | None = None,
 ) -> None:
     """渲染统计行业大类（可多个合并）：对应三级行业、成分公司与排名靠前公司。
 
@@ -653,7 +655,8 @@ def render_stat_industry_block(
     `show_constituents=False` 时省略成分公司选择与拉取按钮（该 tab 下方已有同样面板）；
     `show_l3_table=False` 时连三级行业清单也省略（组内行业已列在下方面板，避免重复）；
     `footer_notes=True` 时标题只写大类数量，各大类景气度改为表格后文字注释；
-    `extra_industries` 补充归属其它大类的行业（如军工电子Ⅲ，不借入其大类景气度）。
+    `extra_industries` 补充映射未覆盖的行业（如军工电子Ⅲ）；
+    `extra_group_label`/`extra_group_count` 在标题末尾追加行业组标注（如国防军工）。
     """
     industry_frames = [
         corresponding_industries(str(item["stat_industry"])) for item in stat_items
@@ -691,6 +694,8 @@ def render_stat_industry_block(
         title = f"{label}，对应 {len(industries)} 个申万三级行业"
     else:
         title = "；".join(parts) + f"，对应 {len(industries)} 个申万三级行业"
+    if extra_group_label and extra_group_count:
+        title += f"；{extra_group_label}，包含 {extra_group_count} 个申万三级行业"
     with st.expander(title, expanded=expanded):
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
@@ -1610,15 +1615,25 @@ with detail_tab:
                     else:
                         stat_groups = merge_stat_items(stat_items)
                     # 归属其它 tab 的统计大类（如军工电子Ⅲ 所在大类归了电子通信）
-                    # 补进本 tab 的框：行业清单只取 extra_l3_ids 指定的行业
-                    # （只补行业，不借入其它大类的景气度注释）
-                    keep_ids = {str(item) for item in (spec.get("extra_l3_ids") or ())}  # type: ignore[union-attr]
+                    # 文档罗列的行业组（如国防军工 5 个，以
+                    # data/swresearch/国防军工三级归属.csv 为准）补进框内清单：
+                    # 只补统计大类映射未覆盖的行业，标题追加组标注
+                    extra_group = spec.get("extra_l3_group") or {}  # type: ignore[union-attr]
+                    extra_label = str(extra_group.get("label", "")) if extra_group else ""
+                    extra_ids = tuple(extra_group.get("l3_ids", ())) if extra_group else ()
                     extra_industries = None
-                    if keep_ids:
-                        catalog_frame = builtin_industry_frame()
-                        extra_industries = catalog_frame[
-                            catalog_frame["industry_l3_id"].astype(str).isin(keep_ids)
-                        ].copy()
+                    if extra_ids:
+                        have_ids: set[str] = set()
+                        for group in stat_groups:
+                            for item in group:
+                                frame = corresponding_industries(str(item["stat_industry"]))
+                                have_ids.update(frame["industry_l3_id"].astype(str))
+                        missing = [i for i in extra_ids if str(i) not in have_ids]
+                        if missing:
+                            catalog_frame = builtin_industry_frame()
+                            extra_industries = catalog_frame[
+                                catalog_frame["industry_l3_id"].astype(str).isin(missing)
+                            ].copy()
                     for group in stat_groups:
                         render_stat_industry_block(
                             stat_items=group,
@@ -1646,6 +1661,8 @@ with detail_tab:
                             footer_notes=bool(spec.get("merge_all_stats")),
                             group_title=spec.get("stat_group_title"),  # type: ignore[arg-type]
                             extra_industries=extra_industries,
+                            extra_group_label=extra_label or None,
+                            extra_group_count=len(extra_ids) if extra_ids else None,
                         )
                 st.divider()
                 if tab_focus_ids:
