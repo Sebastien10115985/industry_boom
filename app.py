@@ -1540,6 +1540,50 @@ with detail_tab:
                     download_key=f"detail_ranking_{key_prefix}",
                 )
 
+            # 面板内已拉取财报的其它子行业常驻展示，切换选择框不会消失；
+            # 数据都在本地缓存里，点开即可重看排名
+            cached_members = [
+                mid
+                for mid in ordered_ids
+                if mid != detail_industry_id
+                and not all_industry_financials[
+                    all_industry_financials["industry_l3_id"].astype(str).eq(mid)
+                ].empty
+            ]
+            if cached_members:
+                st.markdown("**已拉取财报的其它子行业（常驻显示）**")
+                for member_id in cached_members:
+                    member_raw = all_industry_financials[
+                        all_industry_financials["industry_l3_id"].astype(str).eq(member_id)
+                    ].copy()
+                    member_latest = pd.to_datetime(
+                        member_raw["announcement_date"], errors="coerce"
+                    ).max()
+                    member_name = str(member_map[member_id]["name"])
+                    with st.expander(
+                        f"{member_name}（{member_id}）· "
+                        f"{member_raw['company_id'].nunique()} 家 · "
+                        f"最新公告 {member_latest:%Y-%m-%d}",
+                        expanded=False,
+                    ):
+                        try:
+                            member_ranking, member_notes = rank_industry_financials(
+                                member_raw,
+                                as_of_date=detail_as_of,
+                                top_n=top_n,
+                                minimum_coverage=minimum_coverage,
+                            )
+                            render_industry_ranking(
+                                member_ranking,
+                                member_notes,
+                                as_of_date=detail_as_of,
+                                sort_by=detail_sort_by,
+                                download_label=f"下载 {member_name} 财报排名",
+                                download_key=f"detail_ranking_{key_prefix}_{member_id}",
+                            )
+                        except Exception as exc:
+                            st.error(f"计算 {member_name} 排名失败：{exc}")
+
         for tab_index, (tab_ctx, sector_title) in enumerate(
             zip(st.tabs(sector_titles), sector_titles)
         ):
