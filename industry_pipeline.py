@@ -77,6 +77,14 @@ FOCUS_INDUSTRY_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "859611",  # 油气开采Ⅲ
         ),
     ),
+    (
+        "自动化装备",
+        (
+            "850781",  # 机器人
+            "850771",  # 工程机械整机
+            "850782",  # 工控设备
+        ),
+    ),
 )
 
 # 扁平化的展示顺序，供只关心顺序的场景使用
@@ -179,6 +187,11 @@ DETAIL_SECTOR_TABS: tuple[dict[str, object], ...] = (
         "l1_names": ("机械设备",),
         "claimed_l3_ids": (),
         "featured": ("850781", "850771", "850782"),  # 机器人、工程机械整机、工控设备
+        # 全部统计局大类合并成一个框（默认展开）；景气度以表后注释呈现，
+        # 三级行业清单全部移到下方面板（框内不列表）
+        "merge_all_stats": True,
+        "hide_stat_l3_all": True,
+        "compact_focus": True,
     },
 )
 

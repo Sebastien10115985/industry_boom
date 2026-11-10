@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -351,21 +351,32 @@ class IndustryPipelineTests(unittest.TestCase):
             self.assertNotEqual(item["industry_l3_name"], item["industry_l3_id"])
 
     def test_search_cooldown_avoids_repeated_lookup(self) -> None:
-        rows = _cache_rows([("A1.SZ", "甲公司", "2026-09-30", "2026-10-30")])
+        # 日期相对系统今天动态构造，避免测试随日历流逝失效
+        today = date.today()
+        rows = _cache_rows(
+            [
+                (
+                    "A1.SZ",
+                    "甲公司",
+                    str(today - timedelta(days=33)),
+                    str(today - timedelta(days=3)),
+                )
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             save_industry_financials("850814", rows, directory)
             with patch("industry_pipeline.constituents_for", return_value=CONSTITUENTS):
                 before = check_industry_cache(
-                    "850814", "2026-11-02", 365, directory, today=date(2026, 11, 2)
+                    "850814", today, 365, directory, today=today
                 )
             self.assertTrue(before.needs_network)
             self.assertEqual(before.pending_ids, ("B2.SH",))
 
             # 刚核对过但公开渠道没有该报告期公告：冷却期内不再联网
-            record_search("850814", "B2.SH", "2026-11-02", False, directory, date(2026, 11, 2))
+            record_search("850814", "B2.SH", today, False, directory, today)
             with patch("industry_pipeline.constituents_for", return_value=CONSTITUENTS):
                 after = check_industry_cache(
-                    "850814", "2026-11-02", 365, directory, today=date(2026, 11, 2)
+                    "850814", today, 365, directory, today=today
                 )
             self.assertFalse(after.needs_network)
             self.assertEqual(after.pending_ids, ())
@@ -376,22 +387,32 @@ class IndustryPipelineTests(unittest.TestCase):
                 "industry_pipeline.sync_market_caps"
             ) as caps_mock, patch("industry_pipeline.CninfoClient") as client_mock:
                 sync_industry_reports(
-                    "850814", "2026-11-02", only_missing=True, directory=directory
+                    "850814", today, only_missing=True, directory=directory
                 )
             caps_mock.assert_not_called()
             client_mock.assert_not_called()
 
     def test_cooldown_expires_and_as_of_change_forces_lookup(self) -> None:
-        rows = _cache_rows([("A1.SZ", "甲公司", "2026-09-30", "2026-10-30")])
+        today = date.today()
+        rows = _cache_rows(
+            [
+                (
+                    "A1.SZ",
+                    "甲公司",
+                    str(today - timedelta(days=33)),
+                    str(today - timedelta(days=3)),
+                )
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             save_industry_financials("850814", rows, directory)
-            record_search("850814", "B2.SH", "2026-11-02", False, directory, date(2026, 10, 1))
+            record_search("850814", "B2.SH", today, False, directory, today - timedelta(days=30))
             with patch("industry_pipeline.constituents_for", return_value=CONSTITUENTS):
                 expired = check_industry_cache(
-                    "850814", "2026-11-02", 365, directory, today=date(2026, 11, 2)
+                    "850814", today, 365, directory, today=today
                 )
                 moved = check_industry_cache(
-                    "850814", "2026-12-31", 365, directory, today=date(2026, 11, 2)
+                    "850814", today + timedelta(days=59), 365, directory, today=today
                 )
             self.assertTrue(expired.needs_network)
             self.assertEqual(expired.pending_ids, ("B2.SH",))

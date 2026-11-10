@@ -691,6 +691,9 @@ def render_stat_industry_block(
         if industries.empty:
             st.write("该统计行业没有对应的申万三级行业。")
             return
+        if footer_notes and not show_l3_table:
+            # 行业表已移到下方面板时，景气度注释放在框内顶部
+            st.caption("；".join(parts))
         if show_l3_table:
             st.dataframe(
                 industries.rename(
@@ -1618,11 +1621,15 @@ with detail_tab:
                             show_constituents=not (
                                 compact_focus or bool(spec.get("merge_all_stats"))
                             ),
-                            # spec 指定的大类（如化学纤维）不在框内重复列三级行业
-                            show_l3_table=not any(
-                                str(item["stat_industry"])
-                                in spec.get("hide_stat_l3_tables", ())  # type: ignore[union-attr]
-                                for item in group
+                            # spec 指定的大类（如化学纤维）或整 tab（如机械设备）
+                            # 不在框内重复列三级行业
+                            show_l3_table=not (
+                                bool(spec.get("hide_stat_l3_all"))
+                                or any(
+                                    str(item["stat_industry"])
+                                    in spec.get("hide_stat_l3_tables", ())  # type: ignore[union-attr]
+                                    for item in group
+                                )
                             ),
                             footer_notes=bool(spec.get("merge_all_stats")),
                             group_title=spec.get("stat_group_title"),  # type: ignore[arg-type]
