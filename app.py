@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from financing_dividend_provider import attach_financing_dividend
 from data_io import (
     dataframe_to_excel_bytes,
     normalize_input,
@@ -366,9 +367,11 @@ def sort_by_metric(frame: pd.DataFrame, metric_column: str | None) -> pd.DataFra
 def apply_display_units(shown: pd.DataFrame) -> pd.DataFrame:
     """把原始数值换算成表格展示单位并统一小数位。"""
     shown = shown.copy()
-    for column in ("市值(亿元)", "总市值(亿元)"):
+    for column in ("市值(亿元)", "总市值(亿元)", "历史融资(亿元)", "累计分红(亿元)"):
         if column in shown:
             shown[column] = (pd.to_numeric(shown[column], errors="coerce") / 1e8).round(2)
+    if "融资分红比" in shown:
+        shown["融资分红比"] = pd.to_numeric(shown["融资分红比"], errors="coerce").round(2)
     for column in ("营收(千万元)", "净利润(千万元)"):
         if column in shown:
             shown[column] = (pd.to_numeric(shown[column], errors="coerce") / 1e7).round(2)
@@ -423,6 +426,9 @@ INDUSTRY_DETAIL_COLUMNS = [
     "profit_growth_adjusted",
     "gross_margin",
     "weighted_score",
+    "financing_total",
+    "dividend_total",
+    "funding_dividend_ratio",
     "data_coverage",
     "report_period",
     "announcement_date",
@@ -440,6 +446,9 @@ INDUSTRY_DETAIL_LABELS = {
     "profit_growth_adjusted": "利润增长率(%)",
     "gross_margin": "毛利率(%)",
     "weighted_score": "综合得分",
+    "financing_total": "历史融资(亿元)",
+    "dividend_total": "累计分红(亿元)",
+    "funding_dividend_ratio": "融资分红比",
     "data_coverage": "数据完整度",
     "report_period": "报告期",
     "announcement_date": "公告日",
@@ -481,6 +490,8 @@ def render_industry_group(
     note: str | None = None,
 ) -> None:
     """渲染单个三级行业的排名卡片（指标、明细表、缺漏提示）。"""
+    # 融资分红三项（历史融资/累计分红/融资分红比）来自本地缓存，供用户参考
+    group = attach_financing_dividend(group)
     group = group.sort_values("industry_rank", na_position="last")
     group_name = INDUSTRY_DISPLAY_NAMES.get(industry_key) or str(
         group["industry_l3_name"].iloc[0]

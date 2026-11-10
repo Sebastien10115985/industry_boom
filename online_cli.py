@@ -120,6 +120,24 @@ def build_parser() -> argparse.ArgumentParser:
     industry_rank.add_argument("--minimum-coverage", type=float, default=0.60)
 
     industry_actions.add_parser("list", help="列出已同步财报的三级行业")
+
+    financing = subparsers.add_parser(
+        "financing", help="拉取公司融资分红（历史融资/累计分红/融资分红比）"
+    )
+    financing_actions = financing.add_subparsers(dest="action", required=True)
+    financing_sync = financing_actions.add_parser(
+        "sync", help="批量拉取融资分红数据入本地缓存（东方财富 F10）"
+    )
+    financing_sync.add_argument(
+        "--industry", action="append", default=[],
+        help="三级行业 ID（可重复）；与 --company 二选一，缺省拉取全部已固化成分公司",
+    )
+    financing_sync.add_argument(
+        "--company", action="append", default=[], help="仅拉指定证券代码，可重复"
+    )
+    financing_sync.add_argument(
+        "--refresh", action="store_true", help="忽略缓存有效期，全部重新联网拉取"
+    )
     return parser
 
 
@@ -204,6 +222,46 @@ def main() -> None:
             error_path = Path(args.data_file).with_name("update_errors.csv")
             errors.to_csv(error_path, index=False, encoding="utf-8-sig")
             print(f"错误明细：{error_path}")
+        return
+
+    if args.command == "financing" and args.action == "sync":
+        from financing_dividend_provider import sync_financing_dividend
+
+        if args.company:
+            company_ids: list[str] = [str(code) for code in args.company]
+            names: dict[str, str] = {}
+        else:
+            if args.industry:
+                ids: list[str] = []
+                for query in args.industry:
+                    info = resolve_industry(query)
+                    ids.append(str(info["industry_l3_id"]) if info else query)
+                frame = constituents_for(ids)
+            else:
+                frame = constituents_for(
+                    industry_coverage()["industry_l3_id"].astype(str).tolist()
+                )
+            company_ids = frame["company_id"].astype(str).tolist()
+            names = dict(
+                zip(
+                    frame["company_id"].astype(str),
+                    frame["company_name"].astype(str),
+                )
+            )
+
+        def financing_progress(current: int, total: int, message: str) -> None:
+            print(f"[{current}/{total}] {message}")
+
+        result = sync_financing_dividend(
+            company_ids,
+            refresh=args.refresh,
+            progress=financing_progress,
+            names=names,
+        )
+        print(
+            f"融资分红缓存累计 {len(result)} 家公司，"
+            f"本次联网补拉 {len(company_ids)} 家（缓存有效期 90 天）。"
+        )
         return
 
     if args.command == "rank":
