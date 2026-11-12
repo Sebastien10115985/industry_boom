@@ -123,11 +123,12 @@ st.markdown(
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
 QR_STYLE = """<style>
-.dev-qr-wrap { display: flex; flex-direction: column; align-items: flex-end; }
+.dev-qr-wrap { display: flex; flex-direction: column; align-items: center; }
 a.dev-qr-thumb-link { display: inline-block; line-height: 0; }
-img.dev-qr-thumb { width: 110px; border-radius: 6px; border: 1px solid #dcdfe4;
+img.dev-qr-thumb { width: 132px; border-radius: 6px; border: 1px solid #dcdfe4;
   cursor: zoom-in; display: block; }
-.dev-qr-cap { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.dev-qr-cap { font-size: 12px; color: #6b7280; margin-top: 5px; text-align: center;
+  white-space: nowrap; }
 a.dev-qr-overlay { display: none; position: fixed; inset: 0; z-index: 999999;
   background: rgba(0, 0, 0, 0.78); cursor: zoom-out; }
 a.dev-qr-overlay:target { display: flex; align-items: center; justify-content: center; }
@@ -176,7 +177,7 @@ def _wechat_qr_html() -> str:
         + '<img class="dev-qr-thumb" src="'
         + thumb_src
         + '" alt="开发者微信"></a>'
-        + '<div class="dev-qr-cap">开发者微信</div>'
+        + '<div class="dev-qr-cap">微信扫码加开发者好友</div>'
         + "</div>"
         + '<a id="dev-wechat-qr" class="dev-qr-overlay" href="#dev-wechat-qr-closed">'
         + '<img src="'
