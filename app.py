@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -121,6 +122,69 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
+QR_STYLE = """<style>
+.dev-qr-wrap { display: flex; flex-direction: column; align-items: flex-end; }
+a.dev-qr-thumb-link { display: inline-block; line-height: 0; }
+img.dev-qr-thumb { width: 110px; border-radius: 6px; border: 1px solid #dcdfe4;
+  cursor: zoom-in; display: block; }
+.dev-qr-cap { font-size: 12px; color: #6b7280; margin-top: 4px; }
+a.dev-qr-overlay { display: none; position: fixed; inset: 0; z-index: 999999;
+  background: rgba(0, 0, 0, 0.78); cursor: zoom-out; }
+a.dev-qr-overlay:target { display: flex; align-items: center; justify-content: center; }
+a.dev-qr-overlay img { width: min(64vw, 420px); max-height: 82vh; border-radius: 10px;
+  background: #fff; padding: 10px; pointer-events: none; }
+</style>"""
+
+
+@st.cache_data(show_spinner=False)
+def _png_base64(path_str: str, max_width: int, _mtime: float) -> str:
+    """把二维码图片缩放后转 base64，便于内嵌 HTML（浏览器点击可放大）。"""
+    path = Path(path_str)
+    if not path.exists():
+        return ""
+    data = path.read_bytes()
+    try:
+        from PIL import Image
+
+        image = Image.open(BytesIO(data))
+        if image.width > max_width:
+            height = max(1, round(image.height * max_width / image.width))
+            image = image.convert("RGBA").resize((max_width, height), Image.LANCZOS)
+            buffer = BytesIO()
+            image.save(buffer, format="PNG", optimize=True)
+            data = buffer.getvalue()
+    except Exception:  # noqa: BLE001 - 缩放失败直接用原图
+        pass
+    return base64.b64encode(data).decode("ascii")
+
+
+def _wechat_qr_html() -> str:
+    """右上角微信二维码：缩略图常显，点击弹出全屏大图（纯 CSS :target）。"""
+    if not WECHAT_QR_PATH.exists():
+        return ""
+    mtime = WECHAT_QR_PATH.stat().st_mtime
+    thumb = _png_base64(str(WECHAT_QR_PATH), 180, mtime)
+    large = _png_base64(str(WECHAT_QR_PATH), 480, mtime)
+    if not thumb or not large:
+        return ""
+    thumb_src = "data:image/png;base64," + thumb
+    large_src = "data:image/png;base64," + large
+    return (
+        QR_STYLE
+        + '<div class="dev-qr-wrap">'
+        + '<a class="dev-qr-thumb-link" href="#dev-wechat-qr" title="点击查看大图">'
+        + '<img class="dev-qr-thumb" src="'
+        + thumb_src
+        + '" alt="开发者微信"></a>'
+        + '<div class="dev-qr-cap">开发者微信</div>'
+        + "</div>"
+        + '<a id="dev-wechat-qr" class="dev-qr-overlay" href="#dev-wechat-qr-closed">'
+        + '<img src="'
+        + large_src
+        + '" alt="开发者微信"></a>'
+    )
+
+
 _title_col, _qr_col = st.columns([6, 1], vertical_alignment="top")
 with _title_col:
     st.title("万得三级行业动态观察库")
@@ -129,9 +193,9 @@ with _title_col:
         "结果仅用于量化研究，不构成投资建议。"
     )
 with _qr_col:
-    if WECHAT_QR_PATH.exists():
-        # 右上角常显开发者微信二维码，有兴趣交流可扫码添加
-        st.image(str(WECHAT_QR_PATH), caption="扫码添加开发者微信", width=110)
+    _qr_html = _wechat_qr_html()
+    if _qr_html:
+        st.markdown(_qr_html, unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("数据与参数")
