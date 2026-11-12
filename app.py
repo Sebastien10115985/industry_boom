@@ -141,7 +141,7 @@ with st.sidebar:
         data=template_to_excel_bytes(),
         file_name="wind_industry_ranking_template.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+        width="stretch",
     )
     top_n = int(st.number_input("每行业观察数量", min_value=1, max_value=100, value=20, step=1))
     minimum_coverage = float(
@@ -174,7 +174,7 @@ with st.sidebar:
         placeholder="更新知名公司 截止 2026-10-31",
         help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
     )
-    run_update = st.button("执行更新命令", use_container_width=True)
+    run_update = st.button("执行更新命令", width="stretch")
 
 if run_update:
     try:
@@ -558,7 +558,7 @@ def render_industry_group(
             )
         st.dataframe(
             _grey_low_payers(industry_display_frame(group, sort_by), group),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         if _low_return_grey_mask(group, group.index).any():
@@ -656,7 +656,7 @@ def render_industry_ranking(
             f"_asof_{as_of_date:%Y%m%d}.xlsx"
         ),
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+        width="stretch",
         key=download_key,
     )
 
@@ -760,7 +760,7 @@ def render_stat_industry_block(
                         "company_count": "成分公司数",
                     }
                 )[["三级行业ID", "三级行业", "二级行业", "一级行业", "成分公司数"]],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
         if show_l3_table and show_constituents:
@@ -802,7 +802,7 @@ def render_stat_industry_block(
                         "include_date": "纳入时间",
                     }
                 )[["公司代码", "公司名称", "纳入时间"]],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             if st.button(
@@ -839,7 +839,7 @@ def render_stat_industry_block(
         if companies.empty:
             st.caption("当前数据源中没有这些三级行业的公司排名，可先上传数据或同步官方公告。")
         else:
-            st.dataframe(display_frame(companies), use_container_width=True, hide_index=True)
+            st.dataframe(display_frame(companies), width="stretch", hide_index=True)
 
 watch_tab, prosperity_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
     ["观察库", "行业景气度", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
@@ -858,7 +858,7 @@ with watch_tab:
     st.caption(UNIT_CAPTION)
     st.dataframe(
         display_frame(shown_watchlist, SORT_METRICS[watch_sort_label]),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -870,7 +870,7 @@ with prosperity_tab:
     control_columns = st.columns([2, 1, 1])
     prosperity_window = int(control_columns[1].slider("滚动窗口（月）", 3, 12, DEFAULT_WINDOW, 1))
     prosperity_top_n = int(control_columns[2].slider("最景气行业数", 3, 10, DEFAULT_TOP_N, 1))
-    if control_columns[0].button("从国家统计局更新月度景气数据", use_container_width=True):
+    if control_columns[0].button("从国家统计局更新月度景气数据", width="stretch"):
         try:
             with st.spinner("正在从国家统计局检索分行业工业增加值与利润总额数据。"):
                 update_history(months=prosperity_window)
@@ -906,7 +906,7 @@ with prosperity_tab:
                     "data_note": "数据说明",
                 }
             )
-            st.dataframe(shown, use_container_width=True, hide_index=True)
+            st.dataframe(shown, width="stretch", hide_index=True)
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
             st.caption(
                 "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
@@ -951,7 +951,7 @@ with prosperity_tab:
                         "data_note": "数据说明",
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -984,7 +984,7 @@ with prosperity_tab:
                 "匹配度",
             ]
         ],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -1009,7 +1009,7 @@ def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
         .resolve_scale(y="shared")
         .interactive()
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
 
 
 def _total_weight_table() -> pd.DataFrame:
@@ -1084,7 +1084,7 @@ with liquidity_tab:
         "社融存量与存量同比从央行「调查统计司-统计数据-社会融资规模」年度栏目自动解析，"
         "与央行公众号月度报告同源。"
     )
-    if st.button("从公开数据源更新流动性数据", use_container_width=False, key="liquidity_update"):
+    if st.button("从公开数据源更新流动性数据", width="content", key="liquidity_update"):
         liquidity_progress = st.progress(0.0, text="准备更新")
 
         def show_liquidity_progress(step: int, total: int, message: str) -> None:
@@ -1124,7 +1124,7 @@ with liquidity_tab:
                 monthly=False,
             )
             st.markdown("**成分参数及权重**")
-            st.dataframe(_total_weight_table(), use_container_width=True, hide_index=True)
+            st.dataframe(_total_weight_table(), width="stretch", hide_index=True)
             st.caption(
                 "权重为该指标在流动性总指数中的绝对权重；"
                 "子指数内部占比见下方两个子指数的成分表。"
@@ -1145,7 +1145,7 @@ with liquidity_tab:
                 ].drop(columns=["metric", "分组"]),
                 "short_term",
             )
-            st.dataframe(short_term_components, use_container_width=True, hide_index=True)
+            st.dataframe(short_term_components, width="stretch", hide_index=True)
             st.caption("「最新值」为原始单位：DR007 与十年期国债收益率为 %，两融余额为亿元。")
 
             st.divider()
@@ -1163,7 +1163,7 @@ with liquidity_tab:
                 ].drop(columns=["metric", "分组"]),
                 "money",
             )
-            st.dataframe(money_components, use_container_width=True, hide_index=True)
+            st.dataframe(money_components, width="stretch", hide_index=True)
 
             st.divider()
             st.subheader("原始指标走势")
@@ -1186,7 +1186,7 @@ with liquidity_tab:
                 display_series = prepare_metric_display_series(metric_id, raw_series)
                 if metric_id == "margin_balance":
                     display_series = display_series / 1e4  # 亿元 → 万亿元（1 万亿 = 10000 亿）
-                st.line_chart(display_series, use_container_width=True)
+                st.line_chart(display_series, width="stretch")
                 st.caption(METRIC_CHART_NOTES[metric_id])
 
             st.divider()
@@ -1211,7 +1211,7 @@ with liquidity_tab:
             st.dataframe(
                 pd.DataFrame(source_rows),
                 column_config={"来源链接": st.column_config.LinkColumn("来源链接")},
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             st.caption(
@@ -1454,7 +1454,7 @@ with detail_tab:
                 run_industry_sync = controls[2].button(
                     "拉取近一年财报",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     key=f"{key_prefix}_sync_btn",
                     disabled=detail_constituents.empty,
                 )
@@ -1489,7 +1489,7 @@ with detail_tab:
                                 "include_date": "纳入时间",
                             }
                         )[["公司代码", "公司名称", "纳入时间"]],
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -1760,7 +1760,7 @@ with detail_tab:
                     focus_header[0].markdown("**重点子行业（已预拉取财报）**")
                     if focus_header[1].button(
                         "刷新最新财报",
-                        use_container_width=True,
+                        width="stretch",
                         key=f"focus_refresh_{sector_title}",
                         help=(
                             "重新联网核对这些子行业：哪家公司新披露了定期报告（如百济神州刚发财报），"
@@ -1840,7 +1840,7 @@ with quality_tab:
     ineligible = ranking[~ranking["eligible"]]
     st.write(f"因数据完整度低于 {minimum_coverage:.0%} 而未参与排名：{len(ineligible)} 家。")
     if not ineligible.empty:
-        st.dataframe(display_frame(ineligible), use_container_width=True, hide_index=True)
+        st.dataframe(display_frame(ineligible), width="stretch", hide_index=True)
     st.caption("缺失指标按 50 分中性值计入，并乘以完整度惩罚；达到最低完整度后才有行业名次。")
 
 with evidence_tab:
@@ -1864,8 +1864,9 @@ with evidence_tab:
         evidence = ranking[evidence_columns].copy()
         if "extraction_confidence" in evidence:
             evidence["extraction_confidence"] = (evidence["extraction_confidence"] * 100).round(1)
-        st.dataframe(evidence, use_container_width=True, hide_index=True)
-        review_count = int(ranking.get("needs_review", pd.Series(False, index=ranking.index)).fillna(False).sum())
+        st.dataframe(evidence, width="stretch", hide_index=True)
+        needs_review = ranking.get("needs_review", pd.Series(False, index=ranking.index))
+        review_count = int(needs_review.astype("boolean").fillna(False).sum())
         if review_count:
             st.warning(f"有 {review_count} 条记录提取置信度较低，应打开原公告人工复核后再使用。")
 
@@ -1894,7 +1895,7 @@ with evidence_tab:
             ).round(1)
         st.dataframe(
             industry_evidence.sort_values(["industry_l3_name", "company_id", "report_period"]),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         st.caption("公告原文均来自巨潮资讯正式披露，链接可直接点开核对。")
@@ -1921,7 +1922,7 @@ with method_tab:
     )
     weights = model_weight_table().copy()
     weights["weight"] = (weights["weight"] * 100).round(1).astype(str) + "%"
-    st.dataframe(weights, use_container_width=True, hide_index=True)
+    st.dataframe(weights, width="stretch", hide_index=True)
 
 excel_bytes = dataframe_to_excel_bytes(ranking, watchlist, model_weight_table())
 st.download_button(
@@ -1929,5 +1930,5 @@ st.download_button(
     data=excel_bytes,
     file_name=f"industry_watchlist_{pd.Timestamp(report_period):%Y%m%d}_asof_{as_of:%Y%m%d}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
+    width="stretch",
 )
