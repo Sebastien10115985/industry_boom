@@ -761,6 +761,17 @@ def sync_industry_reports(
             new_rows.append(row)
             known_ids.add(report.announcement_id)
 
+        # 每 10 家落盘一次：长行业拉取时页面可先看到已完成公司的排名，
+        # 不必等整个行业跑完
+        if new_rows and (position + 1) % 10 == 0:
+            try:
+                partial = pd.concat(
+                    [existing, pd.DataFrame(new_rows)], ignore_index=True, sort=False
+                ).drop_duplicates("announcement_id", keep="last")
+                save_industry_financials(industry_id, attach_market_cap(partial), directory)
+            except Exception:  # noqa: BLE001 - 中途落盘失败不影响最终写盘
+                pass
+
     additions = pd.DataFrame(new_rows)
     if existing.empty:
         combined = additions
