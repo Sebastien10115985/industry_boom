@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -200,6 +201,16 @@ with _qr_col:
         st.markdown(_qr_html, unsafe_allow_html=True)
 
 with st.sidebar:
+
+    # 事件时间线是独立小程序（evttimeline/app.py），这里只放入口，避免拖慢本页渲染
+    st.link_button(
+        "事件时间线（独立页面）",
+        os.environ.get("EVT_TIMELINE_URL", "http://localhost:8502"),
+        width="stretch",
+    )
+    st.caption("记录行业周期 / 公司经营变化的事件流，支持公告采集与 Word 导出")
+    st.divider()
+
     st.header("数据与参数")
     uploaded = st.file_uploader("上传万得季度数据", type=["csv", "xlsx", "xlsm"])
     st.download_button(

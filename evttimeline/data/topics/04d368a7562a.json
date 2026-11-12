@@ -1,0 +1,647 @@
+{
+  "topic_id": "04d368a7562a",
+  "name": "示例·地产链下行周期",
+  "kind": "industry",
+  "description": "跟踪政策、销售与信用三条线，示例数据可直接删除",
+  "industry_id": "851811",
+  "industry_name": "住宅开发",
+  "company_ids": [
+    "000002.SZ"
+  ],
+  "company_names": [
+    "万科A"
+  ],
+  "created_at": "2026-11-12 15:03:38",
+  "updated_at": "2026-11-12 15:23:32",
+  "events": [
+    {
+      "date": "2020-08-20",
+      "title": "三道红线出台，房企融资收紧",
+      "content": "剔除预收后资产负债率不得超 70%，行业进入去杠杆阶段。",
+      "tags": [
+        "政策",
+        "信用"
+      ],
+      "importance": 5,
+      "source": "manual",
+      "event_id": "5f29df617667",
+      "source_url": "",
+      "created_at": "2026-11-12 15:03:38",
+      "updated_at": "2026-11-12 15:03:38"
+    },
+    {
+      "date": "2022-11-08",
+      "title": "央行支持民企债券融资工具扩容",
+      "content": "第二支箭，缓解民营房企流动性压力。",
+      "tags": [
+        "政策",
+        "信用"
+      ],
+      "importance": 4,
+      "source": "manual",
+      "event_id": "48d70f68bea0",
+      "source_url": "",
+      "created_at": "2026-11-12 15:03:38",
+      "updated_at": "2026-11-12 15:03:38"
+    },
+    {
+      "date": "2024-05-17",
+      "title": "设立 3000 亿元保障性住房再贷款",
+      "content": "支持地方国企收储存量商品房。",
+      "tags": [
+        "政策",
+        "供给"
+      ],
+      "importance": 5,
+      "source": "manual",
+      "event_id": "014c6a8edb6a",
+      "source_url": "",
+      "created_at": "2026-11-12 15:03:38",
+      "updated_at": "2026-11-12 15:03:38"
+    },
+    {
+      "date": "2025-03-05",
+      "title": "政府工作报告首提收储存量房",
+      "content": "从试点转为常态化政策工具。",
+      "tags": [
+        "政策"
+      ],
+      "importance": 4,
+      "source": "manual",
+      "event_id": "6df8353167c8",
+      "source_url": "",
+      "created_at": "2026-11-12 15:03:38",
+      "updated_at": "2026-11-12 15:03:38"
+    },
+    {
+      "date": "2026-10-29",
+      "title": "万科A 披露 2026 年三季度报告",
+      "content": "观察销售与减值计提节奏。",
+      "tags": [
+        "经营",
+        "公告"
+      ],
+      "importance": 3,
+      "source": "cninfo",
+      "source_url": "https://www.cninfo.com.cn/",
+      "event_id": "863621f192e4",
+      "created_at": "2026-11-12 15:03:38",
+      "updated_at": "2026-11-12 15:03:38"
+    },
+    {
+      "date": "2026-10-29",
+      "title": "2026年三季度报告",
+      "content": "万科A 2026-10-29 披露公告：2026年三季度报告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225644984.PDF",
+      "company_id": "000002",
+      "event_id": "3c80ca76ff24",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-10-15",
+      "title": "关于董事会会议召开日期的公告",
+      "content": "万科A 2026-10-15 披露公告：关于董事会会议召开日期的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-10-16/1225606864.PDF",
+      "company_id": "000002",
+      "event_id": "daace5c19da5",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-10-14",
+      "title": "关于为银行贷款事项提供担保的公告",
+      "content": "万科A 2026-10-14 披露公告：关于为银行贷款事项提供担保的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-10-15/1225605242.PDF",
+      "company_id": "000002",
+      "event_id": "cc6390920ff7",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-09-27",
+      "title": "关于担保进展情况的公告",
+      "content": "万科A 2026-09-27 披露公告：关于担保进展情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-09-28/1225582435.PDF",
+      "company_id": "000002",
+      "event_id": "60fd20338aa5",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-09-22",
+      "title": "A股股票交易异常波动公告",
+      "content": "万科A 2026-09-22 披露公告：A股股票交易异常波动公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-09-23/1225577684.PDF",
+      "company_id": "000002",
+      "event_id": "bcebb337cf5c",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "关于计提2026年半年度减值准备的公告",
+      "content": "万科A 2026-08-27 披露公告：关于计提2026年半年度减值准备的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521956.PDF",
+      "company_id": "000002",
+      "event_id": "6576bdf777ee",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "关于累计诉讼、仲裁情况的公告",
+      "content": "万科A 2026-08-27 披露公告：关于累计诉讼、仲裁情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521955.PDF",
+      "company_id": "000002",
+      "event_id": "700ab2089d2c",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "2026年半年度财务报告",
+      "content": "万科A 2026-08-27 披露公告：2026年半年度财务报告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521953.PDF",
+      "company_id": "000002",
+      "event_id": "2d1f34bf3a46",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "2026年半年度非经营性资金占用及其他关联资金往来情况汇总表",
+      "content": "万科A 2026-08-27 披露公告：2026年半年度非经营性资金占用及其他关联资金往来情况汇总表",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521952.PDF",
+      "company_id": "000002",
+      "event_id": "ad3ab316da10",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "2026年半年度报告",
+      "content": "万科A 2026-08-27 披露公告：2026年半年度报告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521951.PDF",
+      "company_id": "000002",
+      "event_id": "77fb3deb9cc7",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-27",
+      "title": "2026年半年度报告摘要",
+      "content": "万科A 2026-08-27 披露公告：2026年半年度报告摘要",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-28/1225521950.PDF",
+      "company_id": "000002",
+      "event_id": "94be3676f01f",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-13",
+      "title": "关于董事会会议召开日期的公告",
+      "content": "万科A 2026-08-13 披露公告：关于董事会会议召开日期的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-14/1225472445.PDF",
+      "company_id": "000002",
+      "event_id": "87751b17cae8",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-08-13",
+      "title": "关于为控股子公司借款提供担保的公告",
+      "content": "万科A 2026-08-13 披露公告：关于为控股子公司借款提供担保的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-14/1225472444.PDF",
+      "company_id": "000002",
+      "event_id": "58b0901756eb",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-31",
+      "title": "广东信达律师事务所关于万科企业股份有限公司2026年第一次临时股东会的法律意见书",
+      "content": "万科A 2026-07-31 披露公告：广东信达律师事务所关于万科企业股份有限公司2026年第一次临时股东会的法律意见书",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-01/1225451859.PDF",
+      "company_id": "000002",
+      "event_id": "5571d265018e",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-31",
+      "title": "2026年第一次临时股东会决议公告",
+      "content": "万科A 2026-07-31 披露公告：2026年第一次临时股东会决议公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-08-01/1225451858.PDF",
+      "company_id": "000002",
+      "event_id": "8e4fb9f51d89",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-24",
+      "title": "2026年第一次临时股东会文件",
+      "content": "万科A 2026-07-24 披露公告：2026年第一次临时股东会文件",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-25/1225441484.PDF",
+      "company_id": "000002",
+      "event_id": "39bfd3505f44",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-24",
+      "title": "关于参加2026年第一次临时股东会相关注意事项的公告",
+      "content": "万科A 2026-07-24 披露公告：关于参加2026年第一次临时股东会相关注意事项的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-25/1225441483.PDF",
+      "company_id": "000002",
+      "event_id": "7263abe19c42",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-21",
+      "title": "关于深铁集团向公司提供股东借款暨关联交易的公告",
+      "content": "万科A 2026-07-21 披露公告：关于深铁集团向公司提供股东借款暨关联交易的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-22/1225436098.PDF",
+      "company_id": "000002",
+      "event_id": "8257f7886604",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-14",
+      "title": "关于担保进展情况的公告",
+      "content": "万科A 2026-07-14 披露公告：关于担保进展情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-15/1225425330.PDF",
+      "company_id": "000002",
+      "event_id": "05f659961382",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-10",
+      "title": "董事会薪酬与提名委员会关于公司第二十一届董事会董事候选人任职资格的审查意见",
+      "content": "万科A 2026-07-10 披露公告：董事会薪酬与提名委员会关于公司第二十一届董事会董事候选人任职资格的审查意见",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-11/1225418907.PDF",
+      "company_id": "000002",
+      "event_id": "a605978cdd6a",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-10",
+      "title": "2026年半年度业绩预告",
+      "content": "万科A 2026-07-10 披露公告：2026年半年度业绩预告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-11/1225418905.PDF",
+      "company_id": "000002",
+      "event_id": "25c0cdf53e96",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-02",
+      "title": "关于深铁集团向公司提供不超过11.4亿元借款暨关联交易的进展公告",
+      "content": "万科A 2026-07-02 披露公告：关于深铁集团向公司提供不超过11.4亿元借款暨关联交易的进展公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-03/1225406837.PDF",
+      "company_id": "000002",
+      "event_id": "56a4ed0a298d",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-07-02",
+      "title": "关于聘任公司总裁的公告",
+      "content": "万科A 2026-07-02 披露公告：关于聘任公司总裁的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-03/1225405135.PDF",
+      "company_id": "000002",
+      "event_id": "6171408cd425",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-30",
+      "title": "关于在交易商协会披露《关于2023年度第四期中期票据本息偿付安排的公告》的提示性公告",
+      "content": "万科A 2026-06-30 披露公告：关于在交易商协会披露《关于2023年度第四期中期票据本息偿付安排的公告》的提示性公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-01/1225400820.PDF",
+      "company_id": "000002",
+      "event_id": "1ad72cad6be0",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-30",
+      "title": "关于担保进展情况的公告",
+      "content": "万科A 2026-06-30 披露公告：关于担保进展情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-07-01/1225400818.PDF",
+      "company_id": "000002",
+      "event_id": "55d1ba2bf4fa",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-12",
+      "title": "关于在交易商协会披露《关于2023年度第三期中期票据本息偿付安排的公告》的提示性公告",
+      "content": "万科A 2026-06-12 披露公告：关于在交易商协会披露《关于2023年度第三期中期票据本息偿付安排的公告》的提示性公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225369474.PDF",
+      "company_id": "000002",
+      "event_id": "43a204256ba9",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-12",
+      "title": "关于深铁集团向公司提供不超过11.4亿元借款暨关联交易的公告",
+      "content": "万科A 2026-06-12 披露公告：关于深铁集团向公司提供不超过11.4亿元借款暨关联交易的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225369473.PDF",
+      "company_id": "000002",
+      "event_id": "b9ce101c48b9",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-12",
+      "title": "关于公开挂牌转让环山集团股份有限公司股权之进展公告",
+      "content": "万科A 2026-06-12 披露公告：关于公开挂牌转让环山集团股份有限公司股权之进展公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225369472.PDF",
+      "company_id": "000002",
+      "event_id": "db7cdb5dd40f",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-12",
+      "title": "关于为银行贷款事项提供担保的公告",
+      "content": "万科A 2026-06-12 披露公告：关于为银行贷款事项提供担保的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225369471.PDF",
+      "company_id": "000002",
+      "event_id": "5fd9c0f4fb77",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-10",
+      "title": "关于在交易商协会披露《关于2023年度第三期中期票据2026年第一次持有人会议的答复公告》的提示性公告",
+      "content": "万科A 2026-06-10 披露公告：关于在交易商协会披露《关于2023年度第三期中期票据2026年第一次持有人会议的答复公告》的提示性公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-11/1225363350.PDF",
+      "company_id": "000002",
+      "event_id": "5fc9337be88c",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-06-10",
+      "title": "关于在交易商协会披露《关于2023年度第四期中期票据2026年第一次持有人会议的答复公告》的提示性公告",
+      "content": "万科A 2026-06-10 披露公告：关于在交易商协会披露《关于2023年度第四期中期票据2026年第一次持有人会议的答复公告》的提示性公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-06-11/1225363349.PDF",
+      "company_id": "000002",
+      "event_id": "68bdc044c9cc",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-29",
+      "title": "关于担保进展情况的公告",
+      "content": "万科A 2026-05-29 披露公告：关于担保进展情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-30/1225339695.PDF",
+      "company_id": "000002",
+      "event_id": "b91e4464117f",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-29",
+      "title": "广东信达律师事务所关于万科企业股份有限公司2025年度股东会的法律意见书",
+      "content": "万科A 2026-05-29 披露公告：广东信达律师事务所关于万科企业股份有限公司2025年度股东会的法律意见书",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-30/1225339694.PDF",
+      "company_id": "000002",
+      "event_id": "1805d10ff56b",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-29",
+      "title": "2025年度股东会决议公告",
+      "content": "万科A 2026-05-29 披露公告：2025年度股东会决议公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-30/1225339693.PDF",
+      "company_id": "000002",
+      "event_id": "5c0cfc69921c",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-22",
+      "title": "关于为银行贷款事项提供担保进展情况的公告",
+      "content": "万科A 2026-05-22 披露公告：关于为银行贷款事项提供担保进展情况的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-23/1225326524.PDF",
+      "company_id": "000002",
+      "event_id": "0e6a2c7ea61b",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-22",
+      "title": "2025年股东会文件",
+      "content": "万科A 2026-05-22 披露公告：2025年股东会文件",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-23/1225326523.PDF",
+      "company_id": "000002",
+      "event_id": "4ae9d97098bb",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    },
+    {
+      "date": "2026-05-22",
+      "title": "关于参加2025年度股东会相关注意事项的公告",
+      "content": "万科A 2026-05-22 披露公告：关于参加2025年度股东会相关注意事项的公告",
+      "tags": [
+        "公告"
+      ],
+      "importance": 2,
+      "source": "cninfo",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2026-05-23/1225326522.PDF",
+      "company_id": "000002",
+      "event_id": "78e1a8b56ef6",
+      "created_at": "2026-11-12 15:23:32",
+      "updated_at": "2026-11-12 15:23:32"
+    }
+  ]
+}
