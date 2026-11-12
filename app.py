@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -118,8 +119,19 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-st.title("万得三级行业动态观察库")
-st.caption("按公告日生成点时排名；默认每个万得三级行业取前 20 名。结果仅用于量化研究，不构成投资建议。")
+WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
+
+_title_col, _qr_col = st.columns([6, 1], vertical_alignment="top")
+with _title_col:
+    st.title("万得三级行业动态观察库")
+    st.caption(
+        "按公告日生成点时排名；默认每个万得三级行业取前 20 名。"
+        "结果仅用于量化研究，不构成投资建议。"
+    )
+with _qr_col:
+    if WECHAT_QR_PATH.exists():
+        # 右上角常显开发者微信二维码，有兴趣交流可扫码添加
+        st.image(str(WECHAT_QR_PATH), caption="扫码添加开发者微信", width=110)
 
 with st.sidebar:
     st.header("数据与参数")
