@@ -42,7 +42,9 @@ CHINAMONEY_PAGE_URL = "https://www.chinamoney.com.cn/chinese/bkfrr/"
 CHINABOND_YIELD_URL = "https://yield.chinabond.com.cn/cbweb-pbc-web/pbc/historyQuery"
 CHINABOND_PAGE_URL = "https://yield.chinabond.com.cn/cbweb-mn/yc/searchYc?locale=zh_CN"
 EASTMONEY_API_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-PBC_SOCIAL_FINANCE_PAGE_URL = "http://www.pbc.gov.cn/diaochatongjisi/135146/index.html"
+# 央行调查统计司「统计数据」总栏目（社会融资规模、货币供应量按年份归档于此；
+# 旧的 135146 社融专题页在 2026-11 改版后已 404，仅作展示链接使用，抓取走 PBC_STATS_INDEX_URL）
+PBC_SOCIAL_FINANCE_PAGE_URL = "http://www.pbc.gov.cn/diaochatongjisi/116219/116319/index.html"
 
 # 数据源登记：页面上展示，也是数据留存清单
 SOURCE_REGISTRY: dict[str, dict[str, str]] = {
