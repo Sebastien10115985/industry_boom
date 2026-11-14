@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from datetime import date
 from io import BytesIO
@@ -50,6 +51,7 @@ from liquidity import (
     REFERENCE_WINDOW_WEEKS,
     compute_liquidity_indices,
     derive_margin_yoy,
+    effective_weight,
     prepare_metric_display_series,
     rolling_reference,
     summarize_index,
@@ -1089,21 +1091,90 @@ def render_liquidity_history_chart(overlay: pd.DataFrame, label: str) -> None:
     st.altair_chart(chart, width="stretch")
 
 
-def _total_weight_table() -> pd.DataFrame:
+LIQUIDITY_WEIGHTS_FILE = (
+    Path(__file__).resolve().parent / "data" / "liquidity" / "custom_weights.json"
+)
+LIQUIDITY_WEIGHT_SLIDER_MAX = 0.30
+
+
+def _load_custom_liquidity_weights() -> dict[str, float] | None:
+    """读取持久化的自定义权重；与默认完全一致或文件缺失时返回 None。"""
+    if not LIQUIDITY_WEIGHTS_FILE.exists():
+        return None
+    try:
+        payload = json.loads(LIQUIDITY_WEIGHTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    weights = {
+        metric_id: float(payload[metric_id])
+        for metric_id in METRICS
+        if metric_id in payload and payload[metric_id] is not None
+    }
+    if len(weights) != len(METRICS):
+        return None
+    if all(
+        abs(weights[metric_id] - float(spec["weight"])) < 1e-9
+        for metric_id, spec in METRICS.items()
+    ):
+        return None
+    return weights
+
+
+def _persist_custom_liquidity_weights(weights: dict[str, float] | None) -> None:
+    """保存自定义权重；传 None 表示回到默认（删除文件）。"""
+    if weights is None:
+        LIQUIDITY_WEIGHTS_FILE.unlink(missing_ok=True)
+        return
+    LIQUIDITY_WEIGHTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LIQUIDITY_WEIGHTS_FILE.write_text(
+        json.dumps(weights, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _weight_slider_key(metric_id: str) -> str:
+    return f"liq_w_{metric_id}"
+
+
+def _persist_weight_sliders() -> None:
+    """slider on_change 回调：把当前滑块值写盘，全部等于默认时清除文件。"""
+    weights = {
+        metric_id: float(st.session_state[_weight_slider_key(metric_id)])
+        for metric_id in METRICS
+    }
+    defaults = {metric_id: float(spec["weight"]) for metric_id, spec in METRICS.items()}
+    if all(abs(weights[key] - defaults[key]) < 1e-9 for key in weights):
+        _persist_custom_liquidity_weights(None)
+    else:
+        _persist_custom_liquidity_weights(weights)
+
+
+def _reset_liquidity_weights() -> None:
+    """恢复默认：清文件、把每个滑块的 session_state 重置为默认值。"""
+    _persist_custom_liquidity_weights(None)
+    for metric_id, spec in METRICS.items():
+        st.session_state[_weight_slider_key(metric_id)] = float(spec["weight"])
+
+
+def _total_weight_table(weights: dict[str, float] | None = None) -> pd.DataFrame:
     """流动性总指数的全部成分及其权重（绝对权重，不分列组内占比）。"""
     rows = [
-        {"指标": str(spec["label"]), "权重": f"{float(spec['weight']):.0%}"}
-        for spec in METRICS.values()
+        {"指标": str(spec["label"]), "权重": f"{effective_weight(metric_id, weights):.0%}"}
+        for metric_id, spec in METRICS.items()
     ]
     return pd.DataFrame(rows)
 
 
-def _attach_group_share(components: pd.DataFrame, group: str) -> pd.DataFrame:
+def _attach_group_share(
+    components: pd.DataFrame, group: str, weights: dict[str, float] | None = None
+) -> pd.DataFrame:
     """在子指数成分表中并入组内占比：在「方向」列后插入「在本指数中权重」。"""
     specs = {mid: spec for mid, spec in METRICS.items() if str(spec["group"]) == group}
-    group_total = sum(float(spec["weight"]) for spec in specs.values())
+    group_total = sum(effective_weight(mid, weights) for mid in specs)
     shares = {
-        str(spec["label"]): float(spec["weight"]) / group_total for spec in specs.values()
+        str(spec["label"]): effective_weight(mid, weights) / group_total
+        for mid, spec in specs.items()
     }
     frame = components.copy().rename(columns={"权重": "在流动性总指数中权重"})
     frame.insert(
@@ -1152,11 +1223,12 @@ def render_liquidity_block(
 with liquidity_tab:
     st.caption(
         "流动性指数把指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再分组合成。"
-        "短端只放价格与体量类指标，两融余额同比属增速类，与货币信贷增速同组："
-        "DR007 15%、十年期国债收益率 15%、两融余额 11% 合成短端资金价格指数（周度更新）；"
-        "M1-M2 剪刀差 18%、M2 同比 12%、社融存量同比 18%、两融余额同比 11% "
-        "合成信用货币增速指数（月频更新，两融同比周频）；"
-        "流动性指数 = 0.41×短端 + 0.59×信用货币增速。"
+        "短端只放价格与体量类指标（DR007、十年期国债收益率、两融余额），"
+        "两融余额同比属增速类，与 M1-M2 剪刀差、M2 同比、社融存量同比同组构成信用货币增速指数；"
+        "流动性指数 = 短端 × 组权重 + 信用货币增速 × 组权重，组权重为组内指标默认权重之和"
+        "（默认 0.41×短端 + 0.59×信用货币增速）。"
+        "各指标默认权重见下方「成分参数及权重」表，可在「自定义指标权重」中动态调整，"
+        "调整后所有指数与成分表即时按新权重重算。"
         "月度数据按次月 10 日生效，避免使用未公布数据。"
         "社融存量与存量同比从央行「调查统计司-统计数据-社会融资规模」年度栏目自动解析，"
         "与央行公众号月度报告同源。"
@@ -1183,11 +1255,50 @@ with liquidity_tab:
         st.info("本地还没有流动性数据。点击上方按钮联网更新（含央行社融存量与同比）。")
         st.caption(MANUAL_IMPORT_NOTE)
     else:
+        # ---- 自定义权重：滑块初值 = 持久化文件或默认值；改动即写盘，全部默认时清文件 ----
+        custom_weights = _load_custom_liquidity_weights()
+        with st.expander(
+            "自定义指标权重" + ("（已启用自定义）" if custom_weights else ""),
+            expanded=custom_weights is not None,
+        ):
+            st.caption(
+                "拖动调整各指标权重（0 ~ 0.30，组内自动归一化），"
+                "三个指数与成分表即时按新权重重算；设置自动保存到本机，刷新后仍生效。"
+            )
+            for metric_id, spec in METRICS.items():
+                if st.session_state.get(_weight_slider_key(metric_id)) is None:
+                    st.session_state[_weight_slider_key(metric_id)] = (
+                        custom_weights or {}).get(metric_id, float(spec["weight"])
+                    )
+                st.slider(
+                    f"{spec['label']}（{'越高越宽松' if int(spec['direction']) >= 0 else '越低越宽松'}）",
+                    min_value=0.0,
+                    max_value=LIQUIDITY_WEIGHT_SLIDER_MAX,
+                    step=0.01,
+                    key=_weight_slider_key(metric_id),
+                    on_change=_persist_weight_sliders,
+                )
+            st.button(
+                "恢复默认权重",
+                key="liq_w_reset",
+                on_click=_reset_liquidity_weights,
+                width="content",
+            )
+        custom_weights = _load_custom_liquidity_weights() or None
+        if custom_weights:
+            st.info(
+                "已启用自定义权重（自动保存，重启后仍生效）："
+                + "、".join(
+                    f"{METRICS[mid]['label']} {effective_weight(mid, custom_weights):.0%}"
+                    for mid in METRICS
+                )
+            )
+
         (
             liquidity_indices,
             liquidity_components,
             liquidity_notes,
-        ) = compute_liquidity_indices(liquidity_metrics)
+        ) = compute_liquidity_indices(liquidity_metrics, weights=custom_weights)
         for note in liquidity_notes:
             st.warning(note)
         if liquidity_indices.empty:
@@ -1201,7 +1312,7 @@ with liquidity_tab:
                 monthly=False,
             )
             st.markdown("**成分参数及权重**")
-            st.dataframe(_total_weight_table(), width="stretch", hide_index=True)
+            st.dataframe(_total_weight_table(custom_weights), width="stretch", hide_index=True)
             st.caption(
                 "权重为该指标在流动性总指数中的绝对权重；"
                 "子指数内部占比见下方两个子指数的成分表。"
@@ -1221,6 +1332,7 @@ with liquidity_tab:
                     liquidity_components["分组"].eq("短端资金价格指数")
                 ].drop(columns=["metric", "分组"]),
                 "short_term",
+                custom_weights,
             )
             st.dataframe(short_term_components, width="stretch", hide_index=True)
             st.caption("「最新值」为原始单位：DR007 与十年期国债收益率为 %，两融余额为亿元。")
@@ -1239,6 +1351,7 @@ with liquidity_tab:
                     liquidity_components["分组"].eq("信用货币增速指数")
                 ].drop(columns=["metric", "分组"]),
                 "money",
+                custom_weights,
             )
             st.dataframe(money_components, width="stretch", hide_index=True)
 

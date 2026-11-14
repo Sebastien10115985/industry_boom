@@ -168,6 +168,40 @@ class WeightAndSynthesisTests(unittest.TestCase):
         rebuilt = 0.41 * check["short_term_index"] + 0.59 * check["money_index"]
         self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
 
+    def test_custom_weights_change_index_and_tables(self):
+        metrics = make_source_metrics()
+        base_indices, _, _ = lq.compute_liquidity_indices(metrics)
+        custom = {metric_id: float(spec["weight"]) for metric_id, spec in lq.METRICS.items()}
+        custom["dr007"] = 0.30
+        custom["bond_10y"] = 0.10
+        custom["margin_balance"] = 0.01
+        custom["margin_balance_yoy"] = 0.25
+        custom["m1_m2_gap"] = 0.05
+        custom["m2_yoy"] = 0.20
+        custom["social_financing_yoy"] = 0.09
+        custom_indices, custom_components, _ = lq.compute_liquidity_indices(
+            metrics, weights=custom
+        )
+        check = custom_indices.dropna()
+        # 自定义权重下，组权重 = 组内自定义权重之和（本例仍为 0.41/0.59），组合式仍成立
+        rebuilt = 0.41 * check["short_term_index"] + 0.59 * check["money_index"]
+        self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
+        # 指数数值确实随权重变化
+        self.assertFalse(
+            np.allclose(
+                base_indices["liquidity_index"].dropna(),
+                custom_indices["liquidity_index"].dropna(),
+            )
+        )
+        # 成分表权重列反映自定义权重（无数据行同样生效）
+        dr_row = custom_components[custom_components["metric"].eq("dr007")].iloc[0]
+        self.assertEqual(dr_row["权重"], "30%")
+        sf_row = custom_components[custom_components["metric"].eq("social_financing_yoy")].iloc[0]
+        self.assertEqual(sf_row["权重"], "9%")
+        # 权重缺省（None）时回退默认
+        fallback = lq.effective_weight("dr007", {"dr007": None})
+        self.assertAlmostEqual(fallback, float(lq.METRICS["dr007"]["weight"]))
+
     def test_empty_metrics_returns_empty_frame(self):
         indices, components, notes = lq.compute_liquidity_indices({})
         self.assertTrue(indices.empty)

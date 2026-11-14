@@ -205,10 +205,18 @@ def _weighted_sum(weights: dict[str, float], zscores: dict[str, pd.Series]) -> p
     return combined
 
 
+def effective_weight(metric_id: str, weights: dict[str, float] | None) -> float:
+    """生效权重：自定义权重优先（缺省/None 回退默认），供合成与展示共用。"""
+    if weights and metric_id in weights and weights[metric_id] is not None:
+        return float(weights[metric_id])
+    return float(METRICS[metric_id]["weight"])
+
+
 def compute_liquidity_indices(
     metrics: dict[str, pd.Series],
     *,
     now: pd.Timestamp | None = None,
+    weights: dict[str, float] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """计算三个指数。
 
@@ -271,25 +279,27 @@ def compute_liquidity_indices(
 
     group_frames: dict[str, pd.Series] = {}
     for group in ("short_term", "money"):
-        weights = {
-            metric_id: float(METRICS[metric_id]["weight"])
+        weights_in_group = {
+            metric_id: effective_weight(metric_id, weights)
             for metric_id in METRICS
             if METRICS[metric_id]["group"] == group
         }
         zscores_in_group = {
-            metric_id: zscores.get(metric_id) for metric_id in weights if metric_id in zscores
+            metric_id: zscores.get(metric_id) for metric_id in weights_in_group if metric_id in zscores
         }
-        combined = _weighted_sum(weights, zscores_in_group)
+        combined = _weighted_sum(weights_in_group, zscores_in_group)
         if combined is not None:
             group_frames[group] = combined.dropna()
         else:
             notes.append(f"{GROUP_LABELS[group]}：组内还没有可通过窗口检验的数据。")
 
-    # 总指数固定为两个子指数的组合，组权重 = 组内指标权重之和（当前 0.41 短端 + 0.59 信用），
+    # 总指数固定为两个子指数的组合，组权重 = 组内指标权重之和（默认 0.41 短端 + 0.59 信用），
     # 保证口径恒一致；组内某指标缺失时该组已按现有指标归一化，因此组合式始终成立
     group_weights = {
         group: sum(
-            float(spec["weight"]) for spec in METRICS.values() if str(spec["group"]) == group
+            effective_weight(metric_id, weights)
+            for metric_id, spec in METRICS.items()
+            if str(spec["group"]) == group
         )
         for group in ("short_term", "money")
     }
@@ -315,7 +325,7 @@ def compute_liquidity_indices(
         indices["money_index"] = group_frames["money"]
     indices = indices.dropna(how="all")
 
-    components = build_component_table(aligned, zscores, prepared, now=now)
+    components = build_component_table(aligned, zscores, prepared, now=now, weights=weights)
     return indices, components, notes
 
 
@@ -325,6 +335,7 @@ def build_component_table(
     prepared: dict[str, pd.Series],
     *,
     now: pd.Timestamp | None = None,
+    weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """每个指标一行的成分表：权重、方向、最新原始值、Z 值、数据区间。"""
     rows: list[dict] = []
@@ -337,7 +348,7 @@ def build_component_table(
                     "指标": str(spec["label"]),
                     "分组": GROUP_LABELS[str(spec["group"])],
                     "方向": "越高越宽松" if int(spec["direction"]) >= 0 else "越高越紧",
-                    "权重": f"{float(spec['weight']):.0%}",
+                    "权重": f"{effective_weight(metric_id, weights):.0%}",
                     "最新值": "—",
                     "Z值": "—",
                     "数据区间": "无数据",
@@ -356,7 +367,7 @@ def build_component_table(
                 "指标": str(spec["label"]),
                 "分组": GROUP_LABELS[str(spec["group"])],
                 "方向": "越高越宽松" if int(spec["direction"]) >= 0 else "越高越紧",
-                "权重": f"{float(spec['weight']):.0%}",
+                "权重": f"{effective_weight(metric_id, weights):.0%}",
                 "最新值": f"{latest_raw:.2f}",
                 "Z值": latest_z,
                 "数据区间": f"{raw_series.index.min():%Y-%m-%d} → {raw_series.index.max():%Y-%m-%d}",
