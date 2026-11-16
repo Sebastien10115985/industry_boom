@@ -125,6 +125,103 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
+# ---- 行业详情各 tab 的自定义评分权重 ----
+MODEL_WEIGHTS_FILE = Path(__file__).resolve().parent / "data" / "model_weights.json"
+MODEL_WEIGHT_SLIDER_MAX = 0.60
+
+MODEL_METRIC_LABELS: dict[str, str] = {
+    "revenue_yoy": "营收增长",
+    "profit_growth_adjusted": "修正利润增长",
+    "profit_growth_symmetric": "利润增长（对称）",
+    "gross_margin": "毛利率",
+    "market_cap": "市值",
+    "revenue": "营收",
+    "net_profit": "净利润",
+    "roe": "净资产收益率",
+    "net_interest_margin": "净息差",
+    "npl_ratio": "不良贷款率",
+    "provision_coverage": "拨备覆盖率",
+    "cet1_ratio": "核心一级资本充足率",
+    "cost_income_ratio": "成本收入比",
+    "pb": "市净率",
+    "net_capital_ratio": "净资本比率",
+    "risk_coverage_ratio": "风险覆盖率",
+    "operating_margin": "营业利润率",
+    "premium_growth": "保费增长",
+    "solvency_ratio": "偿付能力充足率",
+    "combined_ratio": "综合成本率",
+    "investment_yield": "投资收益率",
+}
+
+
+def _load_model_weights() -> dict[str, dict[str, dict[str, float]]]:
+    """自定义评分权重：{tab 名: {模型: {指标: 权重}}}，按 tab 隔离。"""
+    try:
+        payload = json.loads(MODEL_WEIGHTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    store: dict[str, dict[str, dict[str, float]]] = {}
+    for tab_name, models in payload.items():
+        if not isinstance(models, dict):
+            continue
+        cleaned: dict[str, dict[str, float]] = {}
+        for model, metrics in models.items():
+            if model not in MODEL_SPECS or not isinstance(metrics, dict):
+                continue
+            cleaned[str(model)] = {
+                metric: float(value)
+                for metric, value in metrics.items()
+                if metric in MODEL_SPECS[model].metrics and value is not None
+            }
+        if cleaned:
+            store[str(tab_name)] = cleaned
+    return store
+
+
+def _persist_model_weights(store: dict[str, dict[str, dict[str, float]]]) -> None:
+    if not store:
+        MODEL_WEIGHTS_FILE.unlink(missing_ok=True)
+        return
+    MODEL_WEIGHTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    MODEL_WEIGHTS_FILE.write_text(
+        json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _model_weight_key(sector_title: str, model: str, metric: str) -> str:
+    return f"mw_{sector_title}_{model}_{metric}"
+
+
+def _save_tab_model_weights(sector_title: str, model: str) -> None:
+    """滑块 on_change：把该 tab 该模型的权重写盘，全部等于默认时清除该模型覆盖。"""
+    spec = MODEL_SPECS[model]
+    weights = {
+        metric: float(st.session_state[_model_weight_key(sector_title, model, metric)])
+        for metric in spec.metrics
+    }
+    defaults = {metric: float(value[0]) for metric, value in spec.metrics.items()}
+    store = _load_model_weights()
+    if all(abs(weights[metric] - defaults[metric]) < 1e-9 for metric in weights):
+        store.get(sector_title, {}).pop(model, None)
+        if not store.get(sector_title):
+            store.pop(sector_title, None)
+    else:
+        store.setdefault(sector_title, {})[model] = weights
+    _persist_model_weights(store)
+
+
+def _reset_tab_model_weights(sector_title: str, models: list[str]) -> None:
+    """恢复本 tab 默认权重：清文件条目并把滑块 session_state 重置为默认值。"""
+    store = _load_model_weights()
+    store.pop(sector_title, None)
+    _persist_model_weights(store)
+    for model in models:
+        for metric, (weight, _) in MODEL_SPECS[str(model)].metrics.items():
+            st.session_state[_model_weight_key(sector_title, str(model), metric)] = float(weight)
+
+
 def _latest_data_date() -> str:
     """本地数据缓存的最新更新日期（流动性/景气/财报缓存文件中最新的修改日期）。"""
     candidates: list[Path] = []
@@ -1978,10 +2075,92 @@ with detail_tab:
                 compact_focus = bool(spec.get("compact_focus"))
                 tab_focus_ids = [fid for fid in featured if fid in focus_id_set]
 
+                # ---- 本 tab 的自定义评分权重（按 tab 隔离，改动即时重算本页排名） ----
+                tab_industry_ids = {str(item["id"]) for item in sector_members.get(sector_title, [])} | {
+                    str(item) for item in tab_focus_ids
+                }
+                tab_model_names = sorted(
+                    {
+                        str(model)
+                        for model in ranking.loc[
+                            ranking["industry_l3_id"].astype(str).isin(tab_industry_ids), "rank_model"
+                        ].dropna()
+                    }
+                ) or ["general"]
+                tab_weight_store = _load_model_weights()
+                tab_override = tab_weight_store.get(sector_title) or {}
+                with st.expander(
+                    "自定义评分权重" + ("（本页已启用自定义）" if tab_override else ""),
+                    expanded=bool(tab_override),
+                ):
+                    st.caption(
+                        "调整本页公司排名的指标权重，各模型内自动归一到 100%；改动即时重算本页"
+                        "「重点子行业」与「对应统计局大类」的综合得分与名次，不影响其它 tab。"
+                        "设置自动保存到本机。"
+                    )
+                    for model in tab_model_names:
+                        st.markdown(f"**{MODEL_SPECS[model].label}**")
+                        for metric, (default_weight, higher_is_better) in MODEL_SPECS[
+                            model
+                        ].metrics.items():
+                            key = _model_weight_key(sector_title, model, metric)
+                            if st.session_state.get(key) is None:
+                                st.session_state[key] = float(
+                                    (tab_override.get(model) or {}).get(metric, default_weight)
+                                )
+                            st.slider(
+                                f"{MODEL_METRIC_LABELS.get(metric, metric)}"
+                                f"（{'越高越好' if higher_is_better else '越低越好'}）",
+                                min_value=0.0,
+                                max_value=MODEL_WEIGHT_SLIDER_MAX,
+                                step=0.01,
+                                key=key,
+                                on_change=_save_tab_model_weights,
+                                args=(sector_title, model),
+                            )
+                    st.button(
+                        "恢复本页默认权重",
+                        key=f"mw_reset_{sector_title}",
+                        on_click=_reset_tab_model_weights,
+                        args=(sector_title, tab_model_names),
+                        width="content",
+                    )
+                tab_override = _load_model_weights().get(sector_title) or {}
+                if tab_override:
+                    st.info(
+                        "本页已启用自定义评分权重，下方排名按新权重重算（其它 tab 不受影响）。"
+                    )
+                    tab_ranking = score_snapshot(
+                        snapshot,
+                        top_n=top_n,
+                        minimum_coverage=minimum_coverage,
+                        weights=tab_override,
+                    )
+                    tab_focus_raw = (
+                        focus_raw[focus_raw["industry_l3_id"].astype(str).isin(tab_focus_ids)]
+                        if tab_focus_ids and not focus_raw.empty
+                        else pd.DataFrame()
+                    )
+                    if tab_focus_raw.empty:
+                        tab_focus_ranking = pd.DataFrame()
+                        tab_focus_notes: list[str] = []
+                    else:
+                        tab_focus_ranking, tab_focus_notes = rank_industry_financials(
+                            tab_focus_raw,
+                            as_of_date=detail_as_of,
+                            top_n=top_n,
+                            minimum_coverage=minimum_coverage,
+                            weights=tab_override,
+                        )
+                else:
+                    tab_ranking = ranking
+                    tab_focus_ranking = focus_ranking
+                    tab_focus_notes = focus_notes
+
                 def render_focus_rankings() -> None:
                     """本 tab 已预拉取财报的重点子行业，按展示顺序依次排开。"""
-                    subset = focus_ranking[
-                        focus_ranking["industry_l3_id"].astype(str).isin(tab_focus_ids)
+                    subset = tab_focus_ranking[
+                        tab_focus_ranking["industry_l3_id"].astype(str).isin(tab_focus_ids)
                     ]
                     if subset.empty:
                         st.info("这些子行业还没有可排名的财报缓存，可在下方逐个拉取。")
@@ -2004,7 +2183,7 @@ with detail_tab:
                     subset_names = set(subset["industry_l3_name"].astype(str))
                     tab_notes = [
                         note
-                        for note in focus_notes
+                        for note in tab_focus_notes
                         if note.partition("：")[0].strip() in subset_names
                     ]
                     render_industry_ranking(
@@ -2060,7 +2239,7 @@ with detail_tab:
                     for group in stat_groups:
                         render_stat_industry_block(
                             stat_items=group,
-                            ranking_frame=ranking,
+                            ranking_frame=tab_ranking,
                             key_suffix=(
                                 f"detail_{sector_title}_"
                                 + "_".join(str(item["stat_industry"]) for item in group)[:60]

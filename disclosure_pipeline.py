@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 import pandas as pd
 
@@ -179,6 +179,7 @@ def rank_online_financials(
     report_period: str | date | None = None,
     top_n: int = 20,
     minimum_coverage: float = 0.60,
+    weights: Mapping[str, Mapping[str, float]] | None = None,
 ) -> tuple[pd.Timestamp, pd.DataFrame]:
     if data.empty:
         raise ValueError("在线财务数据为空，请先执行 update")
@@ -191,5 +192,7 @@ def rank_online_financials(
     prepared = prepare_growth_metrics(normalized, as_of_date)
     prepared = _apply_financial_report_fallback(prepared, minimum_coverage)
     snapshot = select_snapshot(prepared, as_of_date, period)
-    ranking = score_snapshot(snapshot, top_n=top_n, minimum_coverage=minimum_coverage)
+    ranking = score_snapshot(
+        snapshot, top_n=top_n, minimum_coverage=minimum_coverage, weights=weights
+    )
     return period, ranking

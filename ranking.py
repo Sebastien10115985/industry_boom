@@ -275,12 +275,39 @@ def _percentile_score(values: pd.Series, higher_is_better: bool) -> pd.Series:
     return result
 
 
+def effective_model_metrics(
+    model_name: str,
+    weights: Mapping[str, Mapping[str, float]] | None = None,
+) -> dict[str, tuple[float, bool]]:
+    """某模型的生效权重：自定义优先、缺省回退默认；组内权重自动归一到 1。"""
+    spec = MODEL_SPECS[model_name]
+    defaults = {metric: (float(weight), flag) for metric, (weight, flag) in spec.metrics.items()}
+    custom = (weights or {}).get(model_name)
+    if not custom:
+        return defaults
+    merged = {
+        metric: (
+            float(custom[metric]) if custom.get(metric) is not None else default_weight,
+            flag,
+        )
+        for metric, (default_weight, flag) in defaults.items()
+    }
+    total = sum(weight for weight, _ in merged.values())
+    if total <= 0:
+        return defaults
+    return {metric: (weight / total, flag) for metric, (weight, flag) in merged.items()}
+
+
 def score_snapshot(
     snapshot: pd.DataFrame,
     top_n: int = 20,
     minimum_coverage: float = 0.60,
+    weights: Mapping[str, Mapping[str, float]] | None = None,
 ) -> pd.DataFrame:
-    """在每个万得三级行业、每种模型内部进行横截面百分位评分。"""
+    """在每个万得三级行业、每种模型内部进行横截面百分位评分。
+
+    weights：自定义权重，{模型名: {指标: 权重}}；未提供的模型沿用默认值。
+    """
     required = {"company_id", "industry_l3_id"}
     missing = required.difference(snapshot.columns)
     if missing:
@@ -301,11 +328,12 @@ def score_snapshot(
     ):
         group = group.copy()
         spec = MODEL_SPECS[model_name]
+        metrics = effective_model_metrics(model_name, weights)
         weighted_score = pd.Series(0.0, index=group.index)
         coverage = pd.Series(0.0, index=group.index)
         missing_names: dict[int, list[str]] = {index: [] for index in group.index}
 
-        for metric, (weight, higher_is_better) in spec.metrics.items():
+        for metric, (weight, higher_is_better) in metrics.items():
             values = (
                 pd.to_numeric(group[metric], errors="coerce")
                 if metric in group

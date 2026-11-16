@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 import pandas as pd
 
@@ -891,6 +891,7 @@ def rank_industry_financials(
     top_n: int = DEFAULT_TOP_N,
     minimum_coverage: float = 0.60,
     auto_period: bool = True,
+    weights: Mapping[str, Mapping[str, float]] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """按三级行业分组调用现有算法；每个行业各自取最新共同报告期。"""
     if data.empty:
@@ -917,6 +918,7 @@ def rank_industry_financials(
                 report_period=chosen,
                 top_n=top_n,
                 minimum_coverage=minimum_coverage,
+                weights=weights,
             )
         except ValueError as exc:
             name = str(group["industry_l3_name"].iloc[0]) if "industry_l3_name" in group else industry_id

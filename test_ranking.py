@@ -5,7 +5,13 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from ranking import MODEL_SPECS, prepare_growth_metrics, score_snapshot, select_snapshot
+from ranking import (
+    MODEL_SPECS,
+    effective_model_metrics,
+    prepare_growth_metrics,
+    score_snapshot,
+    select_snapshot,
+)
 
 
 class RankingTests(unittest.TestCase):
@@ -123,6 +129,78 @@ class RankingTests(unittest.TestCase):
         self.assertAlmostEqual(current["revenue_yoy"], 0.20)
         self.assertAlmostEqual(current["profit_growth_adjusted"], 0.20)
         self.assertEqual(len(prepared), 2)
+
+    def test_custom_weights_change_ranking(self) -> None:
+        """自定义权重：营收增长权重拉满时名次由营收决定，净利润权重拉满时由净利润决定。"""
+        rows = []
+        growth = [100.0, 75.0, 50.0, 1.0]
+        profit = [1.0, 25.0, 50.0, 100.0]
+        for index in range(4):
+            rows.append(
+                {
+                    "company_id": f"C{index}",
+                    "industry_l3_id": "X",
+                    "model_type": "general",
+                    "revenue_yoy": growth[index],
+                    "profit_growth_adjusted": 50.0,
+                    "gross_margin": 50.0,
+                    "market_cap": 100.0,
+                    "revenue": 500.0,
+                    "net_profit": profit[index],
+                }
+            )
+        snapshot = pd.DataFrame(rows)
+        base = score_snapshot(snapshot, top_n=4)
+        tiny = 0.02
+        growth_heavy = score_snapshot(
+            snapshot,
+            top_n=4,
+            weights={
+                "general": {
+                    "revenue_yoy": 0.90,
+                    "profit_growth_adjusted": tiny,
+                    "gross_margin": tiny,
+                    "market_cap": tiny,
+                    "revenue": tiny,
+                    "net_profit": tiny,
+                }
+            },
+        )
+        profit_heavy = score_snapshot(
+            snapshot,
+            top_n=4,
+            weights={
+                "general": {
+                    "revenue_yoy": tiny,
+                    "profit_growth_adjusted": tiny,
+                    "gross_margin": tiny,
+                    "market_cap": tiny,
+                    "revenue": tiny,
+                    "net_profit": 0.90,
+                }
+            },
+        )
+        self.assertEqual(growth_heavy.sort_values("industry_rank").iloc[0]["company_id"], "C0")
+        self.assertEqual(profit_heavy.sort_values("industry_rank").iloc[0]["company_id"], "C3")
+        # 名次序列是按公司排的，所以要比较排序后的公司顺序而不是 rank 数值
+        base_order = base.sort_values("industry_rank")["company_id"].tolist()
+        growth_order = growth_heavy.sort_values("industry_rank")["company_id"].tolist()
+        self.assertNotEqual(base_order, growth_order)
+
+    def test_custom_weights_are_normalized(self) -> None:
+        """自定义权重自动归一到 1；全零时回退默认权重。"""
+        metrics = effective_model_metrics(
+            "general", {"general": {"revenue_yoy": 0.60, "net_profit": 0.40}}
+        )
+        self.assertAlmostEqual(sum(weight for weight, _ in metrics.values()), 1.0, places=9)
+        fallback = effective_model_metrics(
+            "general",
+            {"general": {metric: 0.0 for metric in MODEL_SPECS["general"].metrics}},
+        )
+        self.assertAlmostEqual(
+            sum(weight for weight, _ in fallback.values()), 1.0, places=9
+        )
+        self.assertGreater(fallback["gross_margin"][0], 0.0)
 
 
 if __name__ == "__main__":
