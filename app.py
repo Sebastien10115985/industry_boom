@@ -124,6 +124,40 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
+# ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
+DISCLAIMER_TEXT = (
+    "本应用基于国家统计局公布的规模以上工业企业数据及上市公司公开披露的财务报告，"
+    "进行公开数据的整理与可视化展示。相关数据存在发布延迟、缺失或统计口径差异，"
+    "图表与排名结果不代表对未来走势的判断。"
+    "全部内容仅供量化研究与学习交流之用，不构成任何投资建议、收益承诺或买卖依据；"
+    "据此操作产生的一切后果由使用者自行承担，风险自担。"
+)
+
+RISK_BANNER_HTML = (
+    '<div style="margin-top:6px; padding:10px 14px; background:#fff8e6; '
+    'border-left:4px solid #f59e0b; border-radius:6px; font-size:13px; '
+    'line-height:1.8; color:#7a4d00; font-weight:600;">'
+    '<span style="color:#b45309; font-weight:800; margin-right:8px;">&#9888; 免责声明</span>'
+    + DISCLAIMER_TEXT
+    + "</div>"
+)
+
+
+def _require_disclaimer() -> None:
+    """首次打开应用时先渲染声明页，点击「同意」后本会话内不再提示。"""
+    with st.container(border=True):
+        st.subheader("免责声明与使用条款")
+        st.markdown(DISCLAIMER_TEXT)
+        st.caption("点击「同意」表示您已阅读、理解并接受上述内容，方可进入使用本应用。")
+        if st.button("同意并继续", type="primary", width="stretch"):
+            st.session_state["disclaimer_agreed"] = True
+            st.rerun()
+
+
+if not st.session_state.get("disclaimer_agreed"):
+    _require_disclaimer()
+    st.stop()
+
 QR_STYLE = """<style>
 .dev-qr-wrap { display: flex; flex-direction: row; align-items: center;
   justify-content: center; gap: 6px; }
@@ -192,10 +226,8 @@ def _wechat_qr_html() -> str:
 _title_col, _qr_col = st.columns([6, 1], vertical_alignment="top")
 with _title_col:
     st.title("万得三级行业动态观察库")
-    st.caption(
-        "按公告日生成点时排名；默认每个万得三级行业取前 20 名。"
-        "结果仅用于量化研究，不构成投资建议。"
-    )
+    st.caption("按公告日生成点时排名；默认每个万得三级行业取前 20 名。")
+    st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
 with _qr_col:
     _qr_html = _wechat_qr_html()
     if _qr_html:
