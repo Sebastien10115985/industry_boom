@@ -404,9 +404,119 @@ def _require_disclaimer() -> None:
             st.rerun()
 
 
-if not st.session_state.get("disclaimer_agreed"):
-    _require_disclaimer()
-    st.stop()
+# ---- 显示模式：录屏演示时隐藏证券代码与公司名称，防止录屏视频违规 ----
+DISPLAY_MODE_FILE = Path(__file__).resolve().parent / "data" / "display_mode.json"
+DISPLAY_MODE_LABELS = {
+    "normal": "正常显示",
+    "hidden": "演示：隐藏证券代码与公司名称",
+    "alias": "演示：名称替换为示例企业",
+}
+LABEL_TO_MODE = {label: mode for mode, label in DISPLAY_MODE_LABELS.items()}
+DEMO_MASK_TEXT = "***"
+
+
+def _load_display_mode() -> str:
+    try:
+        # utf-8-sig：兼容手工编辑工具写入的 BOM 头
+        mode = json.loads(DISPLAY_MODE_FILE.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return "normal"
+    return mode if mode in DISPLAY_MODE_LABELS else "normal"
+
+
+def _persist_display_mode(mode: str) -> None:
+    if mode == "normal":
+        DISPLAY_MODE_FILE.unlink(missing_ok=True)
+        return
+    DISPLAY_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DISPLAY_MODE_FILE.write_text(json.dumps(mode, ensure_ascii=False), encoding="utf-8")
+
+
+if "display_mode_label" not in st.session_state:
+    st.session_state["display_mode_label"] = DISPLAY_MODE_LABELS[_load_display_mode()]
+display_mode = LABEL_TO_MODE[st.session_state["display_mode_label"]]
+
+# 公司匿名映射：按 company_id 全集排序稳定编号，跨会话、跨表格保持一致
+COMPANY_ALIASES: dict[str, str] = {}
+NAME_TO_ALIAS: dict[str, str] = {}
+
+
+def _build_company_aliases(frames: list[pd.DataFrame]) -> None:
+    """演示模式下为全部公司生成「示例企业N」别名（hidden 模式统一用 ***）。"""
+    global COMPANY_ALIASES, NAME_TO_ALIAS
+    COMPANY_ALIASES, NAME_TO_ALIAS = {}, {}
+    if display_mode == "normal":
+        return
+    ids: set[str] = set()
+    names: dict[str, str] = {}
+    for frame in frames:
+        if frame is None or frame.empty or "company_id" not in frame.columns:
+            continue
+        pairs = frame[["company_id", "company_name"]].dropna(subset=["company_id"])
+        for company_id, name in pairs.itertuples(index=False):
+            key = str(company_id)
+            ids.add(key)
+            names.setdefault(key, str(name) if pd.notna(name) else "")
+    for index, company_id in enumerate(sorted(ids), 1):
+        COMPANY_ALIASES[company_id] = f"示例企业{index}"
+        if names.get(company_id):
+            NAME_TO_ALIAS[names[company_id]] = (
+                COMPANY_ALIASES[company_id] if display_mode == "alias" else DEMO_MASK_TEXT
+            )
+
+
+def _demo_mask_text(text: str) -> str:
+    """把文本里出现的真实公司名替换为演示占位（公告标题等自由文本用）。"""
+    for name, alias in NAME_TO_ALIAS.items():
+        if name and name in text:
+            text = text.replace(name, alias)
+    return text
+
+
+def _demo_mask_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """数据层脱敏：公司名统一替换、公告标题同步脱敏、公告原文链接（含证券代码）删除。
+
+    company_id 保留原值：内部去重、分组、组件 key 都依赖它，展示层再隐藏。
+    """
+    if display_mode == "normal" or frame is None or frame.empty:
+        return frame
+    out = frame.copy()
+    if "company_name" in out.columns:
+        if display_mode == "alias" and "company_id" in out.columns:
+            out["company_name"] = (
+                out["company_id"].astype(str).map(COMPANY_ALIASES).fillna(out["company_name"])
+            )
+        else:
+            out["company_name"] = DEMO_MASK_TEXT
+    if "source_title" in out.columns:
+        out["source_title"] = out["source_title"].astype(str).map(_demo_mask_text)
+    if "source_url" in out.columns:
+        out = out.drop(columns=["source_url"])
+    return out
+
+
+def _demo_visible_columns(columns: list[str]) -> list[str]:
+    """显示层列过滤：两种演示模式都隐藏证券代码列，hidden 模式再隐藏公司名称列。"""
+    if display_mode == "normal":
+        return columns
+    hidden = {"company_id"} | ({"company_name"} if display_mode == "hidden" else set())
+    return [column for column in columns if column not in hidden]
+
+
+def _demo_constituents_for(industry_ids) -> pd.DataFrame:
+    """成分公司表脱敏后的读取入口（内部逻辑仍用未掩码的 company_id）。"""
+    return _demo_mask_frame(constituents_for(industry_ids))
+
+
+def _demo_visible_labels(labels: list[str]) -> list[str]:
+    """显示层列过滤（中文列名版）：演示模式隐藏证券代码列，hidden 模式再隐藏公司名称列。"""
+    if display_mode == "normal":
+        return labels
+    hidden_labels = {"公司代码", "证券代码"} | (
+        {"公司名称"} if display_mode == "hidden" else set()
+    )
+    return [column for column in labels if column not in hidden_labels]
+
 
 QR_STYLE = """<style>
 .dev-qr-wrap { display: flex; flex-direction: row; align-items: center;
@@ -486,6 +596,19 @@ with _qr_col:
 with st.sidebar:
 
     st.header("数据与参数")
+    # 显示模式：录屏/演示时隐藏公司身份信息，防止视频违规
+    st.radio(
+        "显示模式",
+        list(DISPLAY_MODE_LABELS.values()),
+        key="display_mode_label",
+        on_change=lambda: _persist_display_mode(
+            LABEL_TO_MODE[st.session_state["display_mode_label"]]
+        ),
+        help=(
+            "录屏防违规：演示模式会隐藏证券代码与公司名称（或替换为示例企业），"
+            "公告原文链接一并隐藏；设置自动保存，刷新后仍生效。"
+        ),
+    )
     uploaded = st.file_uploader("上传万得季度数据", type=["csv", "xlsx", "xlsm"])
     st.download_button(
         "下载数据模板",
@@ -577,6 +700,11 @@ try:
     normalized = normalize_input(raw_data)
     if model_override != "auto":
         normalized["model_type"] = model_override
+    # 演示模式：别名要覆盖全部公司，先加载行业财报全量缓存再统一脱敏
+    all_industry_financials = load_all_industry_financials()
+    _build_company_aliases([normalized, all_industry_financials])
+    normalized = _demo_mask_frame(normalized)
+    all_industry_financials = _demo_mask_frame(all_industry_financials)
 except Exception as exc:
     st.error(f"读取数据失败：{exc}")
     st.stop()
@@ -631,7 +759,7 @@ if ranking.empty:
     st.warning("当前截止日与报告期组合没有可排名公司。")
     st.stop()
 
-all_industry_financials = load_all_industry_financials()
+all_industry_financials = _demo_mask_frame(all_industry_financials)
 
 DISPLAY_COLUMNS = [
     "industry_l3_id",
@@ -784,7 +912,9 @@ def display_frame(frame: pd.DataFrame, sort_by: str | None = None) -> pd.DataFra
     prepared = align_profit_growth(frame)
     # 排序放在口径替换之后：按利润增长率排序时用的就是表格里展示的那个值
     prepared = sort_by_metric(prepared, sort_by)
-    columns = [column for column in DISPLAY_COLUMNS if column in prepared.columns]
+    columns = _demo_visible_columns(
+        [column for column in DISPLAY_COLUMNS if column in prepared.columns]
+    )
     shown = prepared[columns].rename(columns=COLUMN_LABELS)
     return apply_display_units(shown)
 
@@ -836,7 +966,9 @@ def industry_display_frame(frame: pd.DataFrame, sort_by: str | None = None) -> p
     prepared = align_profit_growth(frame)
     # 排序放在口径替换之后：按利润增长率排序时用的就是表格里展示的那个值
     prepared = sort_by_metric(prepared, sort_by)
-    columns = [column for column in INDUSTRY_DETAIL_COLUMNS if column in prepared.columns]
+    columns = _demo_visible_columns(
+        [column for column in INDUSTRY_DETAIL_COLUMNS if column in prepared.columns]
+    )
     shown = prepared[columns].rename(columns=INDUSTRY_DETAIL_LABELS)
     shown = apply_display_units(shown)
     if "上市日期" in shown:
@@ -935,7 +1067,7 @@ def render_industry_group(
             )
         covered_ids = set(group["company_id"].astype(str))
         # 二级聚合行业（如工业金属）的成分 = 组内全部三级行业成分之和
-        group_constituents = constituents_for(
+        group_constituents = _demo_constituents_for(
             list(l2_group_l3_ids().get(industry_key, (industry_key,)))
         )
         absent = group_constituents[
@@ -1126,7 +1258,7 @@ def render_stat_industry_block(
                 hide_index=True,
             )
         if show_l3_table and show_constituents:
-            constituents = constituents_for(industries["industry_l3_id"])
+            constituents = _demo_constituents_for(industries["industry_l3_id"])
             if constituents.empty:
                 st.caption(
                     "这些三级行业尚未固化成分公司，可运行 "
@@ -1163,7 +1295,7 @@ def render_stat_industry_block(
                         "company_name": "公司名称",
                         "include_date": "纳入时间",
                     }
-                )[["公司代码", "公司名称", "纳入时间"]],
+                )[_demo_visible_labels(["公司代码", "公司名称", "纳入时间"])],
                 width="stretch",
                 hide_index=True,
             )
@@ -1867,7 +1999,7 @@ with detail_tab:
                 items.sort(key=lambda item: -float(item["sort_key"]))
         if pending_members:
             snapshot_counts = (
-                constituents_for(list(pending_members))
+                _demo_constituents_for(list(pending_members))
                 .groupby("industry_l3_id")
                 .size()
                 .to_dict()
@@ -1925,7 +2057,7 @@ with detail_tab:
                 )
                 detail_industry_id = industry_labels[chosen_label]
                 detail_industry_name = str(member_map[detail_industry_id]["name"])
-                detail_constituents = constituents_for([detail_industry_id])
+                detail_constituents = _demo_constituents_for([detail_industry_id])
                 run_industry_sync = controls[2].button(
                     "拉取近一年财报",
                     type="primary",
@@ -1963,7 +2095,7 @@ with detail_tab:
                                 "company_name": "公司名称",
                                 "include_date": "纳入时间",
                             }
-                        )[["公司代码", "公司名称", "纳入时间"]],
+                        )[_demo_visible_labels(["公司代码", "公司名称", "纳入时间"])],
                         width="stretch",
                         hide_index=True,
                     )
@@ -2417,8 +2549,12 @@ with evidence_tab:
         ]
         if column in ranking.columns
     ]
+    evidence_columns = _demo_visible_columns(evidence_columns)
     if "source_url" not in evidence_columns:
-        st.info("演示或上传数据未包含公告来源；在线公告缓存会显示可追溯链接。")
+        if display_mode == "normal":
+            st.info("演示或上传数据未包含公告来源；在线公告缓存会显示可追溯链接。")
+        else:
+            st.caption("演示模式下公告原文链接已隐藏，防止证券代码出现在录屏中。")
     else:
         evidence = ranking[evidence_columns].copy()
         if "extraction_confidence" in evidence:
@@ -2431,29 +2567,33 @@ with evidence_tab:
 
     if not all_industry_financials.empty:
         st.subheader("三级行业财报公告原文")
-        industry_evidence = all_industry_financials[
-            [
-                column
-                for column in [
-                    "industry_l3_name",
-                    "company_id",
-                    "company_name",
-                    "report_period",
-                    "announcement_date",
-                    "source_title",
-                    "source_url",
-                    "extraction_confidence",
-                    "needs_review",
+        industry_evidence = all_industry_financials.sort_values(
+            ["industry_l3_name", "company_id", "report_period"]
+        )[
+            _demo_visible_columns(
+                [
+                    column
+                    for column in [
+                        "industry_l3_name",
+                        "company_id",
+                        "company_name",
+                        "report_period",
+                        "announcement_date",
+                        "source_title",
+                        "source_url",
+                        "extraction_confidence",
+                        "needs_review",
+                    ]
+                    if column in all_industry_financials.columns
                 ]
-                if column in all_industry_financials.columns
-            ]
+            )
         ].copy()
         if "extraction_confidence" in industry_evidence:
             industry_evidence["extraction_confidence"] = (
                 industry_evidence["extraction_confidence"] * 100
             ).round(1)
         st.dataframe(
-            industry_evidence.sort_values(["industry_l3_name", "company_id", "report_period"]),
+            industry_evidence,
             width="stretch",
             hide_index=True,
         )
