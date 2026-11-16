@@ -125,6 +125,19 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
+def _latest_data_date() -> str:
+    """本地数据缓存的最新更新日期（流动性/景气/财报缓存文件中最新的修改日期）。"""
+    candidates: list[Path] = []
+    for folder in ("data/liquidity", "data/industries", "data"):
+        directory = Path(__file__).resolve().parent / folder
+        if directory.is_dir():
+            candidates.extend(path for path in directory.glob("*.csv") if path.is_file())
+    if not candidates:
+        return ""
+    newest = max(candidates, key=lambda path: path.stat().st_mtime)
+    return date.fromtimestamp(newest.stat().st_mtime).isoformat()
+
+
 # ---- 访问统计：访客按 IP/设备哈希去重（UV），会话次数保留（PV），JSON 文件存储 ----
 VISIT_STATS_PATH = Path(__file__).resolve().parent / "data" / "visit_stats.json"
 VISIT_HISTORY_DAYS = 90
@@ -375,6 +388,10 @@ with st.sidebar:
     run_update = st.button("执行更新命令", width="stretch")
 
     st.divider()
+    # 侧栏最底部：先报告日期，再访问统计（统计保持为侧栏最后一个元素）
+    _data_date = _latest_data_date()
+    if _data_date:
+        st.caption(f"数据更新至 {_data_date}")
     visit_stats = _record_visit()
     st.caption(
         f"累计访客 {visit_stats['visitors']} · 今日访客 {visit_stats['today_visitors']}"
