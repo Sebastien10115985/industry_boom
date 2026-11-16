@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import date
 from io import BytesIO
@@ -124,43 +125,101 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
-# ---- 访问统计：按会话计数（每次打开/刷新页面算一次），JSON 文件存储 ----
+# ---- 访问统计：访客按 IP/设备哈希去重（UV），会话次数保留（PV），JSON 文件存储 ----
 VISIT_STATS_PATH = Path(__file__).resolve().parent / "data" / "visit_stats.json"
 VISIT_HISTORY_DAYS = 90
 
 
+def _visitor_hash() -> str:
+    """访客指纹：代理转发的真实 IP + User-Agent + 语言偏好，SHA256 截断 16 位。
+
+    Streamlit Cloud 等部署在反向代理后，真实 IP 在 X-Forwarded-For 首段。
+    拿不到请求头（本地裸跑/测试环境）时返回空串，调用方按单访客处理。
+    """
+    try:
+        headers = st.context.headers
+    except Exception:
+        return ""
+    forwarded = str(headers.get("X-Forwarded-For", "") or "")
+    ip = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else str(headers.get("X-Real-Ip", "") or "").strip()
+    )
+    ua = str(headers.get("User-Agent", "") or "")
+    lang = str(headers.get("Accept-Language", "") or "")
+    raw = f"{ip}|{ua}|{lang}".strip("|")
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _normalize_daily(daily: dict) -> dict[str, dict]:
+    """把每日明细统一为 {day: {"visitors": [...], "visits": n}} 结构。"""
+    out: dict[str, dict] = {}
+    for day, value in (daily or {}).items():
+        if isinstance(value, dict):
+            out[str(day)] = {
+                "visitors": [str(v) for v in (value.get("visitors") or [])],
+                "visits": int(value.get("visits") or 0),
+            }
+        else:
+            out[str(day)] = {"visitors": [], "visits": int(value or 0)}
+    return out
+
+
 def _load_visit_stats() -> dict:
     try:
-        stats = json.loads(VISIT_STATS_PATH.read_text(encoding="utf-8"))
-        if isinstance(stats, dict) and isinstance(stats.get("daily"), dict):
-            stats.setdefault("total", sum(stats["daily"].values()))
-            return stats
+        raw = json.loads(VISIT_STATS_PATH.read_text(encoding="utf-8"))
     except Exception:
-        pass
-    return {"total": 0, "daily": {}}
+        return {"visitors": [], "daily": {}}
+    if isinstance(raw, dict) and isinstance(raw.get("visitors"), list):
+        return {
+            "visitors": [str(v) for v in raw["visitors"]],
+            "daily": _normalize_daily(raw.get("daily") or {}),
+        }
+    # 旧版格式（{"total": n, "daily": {day: count}}）：PV 保留并入每日次数，UV 重新统计
+    if isinstance(raw, dict):
+        return {"visitors": [], "daily": _normalize_daily(raw.get("daily") or {})}
+    return {"visitors": [], "daily": {}}
 
 
 def _record_visit() -> dict[str, int]:
-    """每个浏览器会话只计一次；返回累计与当日次数。"""
+    """每个浏览器会话记一次访问：当日次数 +1（PV），访客哈希按 UV 去重。"""
     today = date.today().isoformat()
     if st.session_state.get("visit_counted"):
         stats = _load_visit_stats()
-        return {"total": int(stats["total"]), "today": int(stats["daily"].get(today, 0))}
+        day = stats["daily"].get(today) or {"visitors": [], "visits": 0}
+        return {
+            "visitors": len(stats["visitors"]),
+            "today_visitors": len(day["visitors"]),
+            "today_visits": int(day["visits"]),
+        }
     st.session_state["visit_counted"] = True
     stats = _load_visit_stats()
-    stats["total"] = int(stats.get("total", 0)) + 1
-    daily = dict(stats.get("daily") or {})
-    daily[today] = int(daily.get(today, 0)) + 1
+    visitor_id = _visitor_hash() or "local"
+    visitors = list(stats["visitors"])
+    if visitor_id not in visitors:
+        visitors.append(visitor_id)
+    daily = stats["daily"]
+    day = daily.setdefault(today, {"visitors": [], "visits": 0})
+    if visitor_id not in day["visitors"]:
+        day["visitors"].append(visitor_id)
+    day["visits"] = int(day["visits"]) + 1
     # 只保留最近一段时间的每日明细，避免文件无限增长
     if len(daily) > VISIT_HISTORY_DAYS:
         for old_day in sorted(daily)[: len(daily) - VISIT_HISTORY_DAYS]:
             daily.pop(old_day, None)
-    payload = {"total": stats["total"], "daily": daily}
+    payload = {"visitors": visitors, "daily": daily}
     VISIT_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = VISIT_STATS_PATH.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp_path.replace(VISIT_STATS_PATH)  # 原子替换，避免并发写坏文件
-    return {"total": int(stats["total"]), "today": int(daily[today])}
+    return {
+        "visitors": len(visitors),
+        "today_visitors": len(day["visitors"]),
+        "today_visits": int(day["visits"]),
+    }
 
 # ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
 DISCLAIMER_TEXT = (
@@ -317,7 +376,10 @@ with st.sidebar:
 
     st.divider()
     visit_stats = _record_visit()
-    st.caption(f"累计访问 {visit_stats['total']} 次 · 今日 {visit_stats['today']} 次")
+    st.caption(
+        f"累计访客 {visit_stats['visitors']} · 今日访客 {visit_stats['today_visitors']}"
+        f" · 今日访问 {visit_stats['today_visits']} 次"
+    )
 
 if run_update:
     try:
