@@ -154,6 +154,49 @@ MODEL_METRIC_LABELS: dict[str, str] = {
 }
 
 
+# 「自定义评分权重」折叠区的强调样式：琥珀描边 + 悬浮阴影 + 加粗标题，暗色主题自动适配
+CUSTOM_WEIGHT_EXPANDER_CSS = """
+<style>
+div[class*="st-key-mw_box_"] details {
+    border: 2px solid #f59e0b !important;
+    border-radius: 12px !important;
+    background: linear-gradient(180deg, #fffaf0 0%, #ffffff 85%) !important;
+    box-shadow: 0 2px 6px rgba(180, 83, 9, 0.12) !important;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+div[class*="st-key-mw_box_"] details:hover {
+    border-color: #d97706 !important;
+    box-shadow: 0 4px 14px rgba(217, 119, 6, 0.28) !important;
+}
+div[class*="st-key-mw_box_"] summary,
+div[class*="st-key-mw_box_"] summary p {
+    font-weight: 700 !important;
+    color: #b45309 !important;
+}
+div[class*="st-key-mw_box_"] summary:hover,
+div[class*="st-key-mw_box_"] summary:hover p {
+    color: #92400e !important;
+}
+div[class*="st-key-mw_box_"] summary svg {
+    color: #d97706 !important;
+}
+@media (prefers-color-scheme: dark) {
+    div[class*="st-key-mw_box_"] details {
+        background: linear-gradient(180deg, rgba(245,158,11,.16) 0%, rgba(245,158,11,.04) 85%) !important;
+        border-color: #fbbf24 !important;
+    }
+    div[class*="st-key-mw_box_"] summary,
+    div[class*="st-key-mw_box_"] summary p {
+        color: #fbbf24 !important;
+    }
+    div[class*="st-key-mw_box_"] summary svg {
+        color: #fbbf24 !important;
+    }
+}
+</style>
+"""
+
+
 def _load_model_weights() -> dict[str, dict[str, dict[str, float]]]:
     """自定义评分权重：{tab 名: {模型: {指标: 权重}}}，按 tab 隔离。"""
     try:
@@ -1738,6 +1781,8 @@ with detail_tab:
             )
         )
         sector_titles = [str(spec["title"]) for spec in DETAIL_SECTOR_TABS] + ["其它行业"]
+        # 各 tab 的「自定义评分权重」折叠区共用这套强调样式
+        st.markdown(CUSTOM_WEIGHT_EXPANDER_CSS, unsafe_allow_html=True)
         sector_specs = {str(spec["title"]): spec for spec in DETAIL_SECTOR_TABS}
 
         def claim_tab(l3_id: str) -> str:
@@ -2089,35 +2134,37 @@ with detail_tab:
                 ) or ["general"]
                 tab_weight_store = _load_model_weights()
                 tab_override = tab_weight_store.get(sector_title) or {}
-                with st.expander(
-                    "自定义评分权重" + ("（本页已启用自定义）" if tab_override else ""),
-                    expanded=bool(tab_override),
-                ):
-                    st.caption(
-                        "调整本页公司排名的指标权重，各模型内自动归一到 100%；改动即时重算本页"
-                        "「重点子行业」与「对应统计局大类」的综合得分与名次，不影响其它 tab。"
-                        "设置自动保存到本机。"
-                    )
-                    for model in tab_model_names:
-                        st.markdown(f"**{MODEL_SPECS[model].label}**")
-                        for metric, (default_weight, higher_is_better) in MODEL_SPECS[
-                            model
-                        ].metrics.items():
-                            key = _model_weight_key(sector_title, model, metric)
-                            if st.session_state.get(key) is None:
-                                st.session_state[key] = float(
-                                    (tab_override.get(model) or {}).get(metric, default_weight)
+                with st.container(key=f"mw_box_{tab_index}"):
+                    with st.expander(
+                        "自定义评分权重" + ("（本页已启用自定义）" if tab_override else ""),
+                        expanded=bool(tab_override),
+                        icon=":material/tune:",
+                    ):
+                        st.caption(
+                            "调整本页公司排名的指标权重，各模型内自动归一到 100%；改动即时重算本页"
+                            "「重点子行业」与「对应统计局大类」的综合得分与名次，不影响其它 tab。"
+                            "设置自动保存到本机。"
+                        )
+                        for model in tab_model_names:
+                            st.markdown(f"**{MODEL_SPECS[model].label}**")
+                            for metric, (default_weight, higher_is_better) in MODEL_SPECS[
+                                model
+                            ].metrics.items():
+                                key = _model_weight_key(sector_title, model, metric)
+                                if st.session_state.get(key) is None:
+                                    st.session_state[key] = float(
+                                        (tab_override.get(model) or {}).get(metric, default_weight)
+                                    )
+                                st.slider(
+                                    f"{MODEL_METRIC_LABELS.get(metric, metric)}"
+                                    f"（{'越高越好' if higher_is_better else '越低越好'}）",
+                                    min_value=0.0,
+                                    max_value=MODEL_WEIGHT_SLIDER_MAX,
+                                    step=0.01,
+                                    key=key,
+                                    on_change=_save_tab_model_weights,
+                                    args=(sector_title, model),
                                 )
-                            st.slider(
-                                f"{MODEL_METRIC_LABELS.get(metric, metric)}"
-                                f"（{'越高越好' if higher_is_better else '越低越好'}）",
-                                min_value=0.0,
-                                max_value=MODEL_WEIGHT_SLIDER_MAX,
-                                step=0.01,
-                                key=key,
-                                on_change=_save_tab_model_weights,
-                                args=(sector_title, model),
-                            )
                     st.button(
                         "恢复本页默认权重",
                         key=f"mw_reset_{sector_title}",
