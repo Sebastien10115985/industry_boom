@@ -23,6 +23,7 @@ __pycache__/
 # 抓取台账：每次检索都会追加，不入库
 data/industries/errors.csv
 data/industries/_search_log.csv
+data/visit_stats.json
 
 # 导出与临时产物
 output/

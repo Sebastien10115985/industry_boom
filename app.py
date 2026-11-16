@@ -124,6 +124,44 @@ st.markdown(
 )
 WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
 
+# ---- 访问统计：按会话计数（每次打开/刷新页面算一次），JSON 文件存储 ----
+VISIT_STATS_PATH = Path(__file__).resolve().parent / "data" / "visit_stats.json"
+VISIT_HISTORY_DAYS = 90
+
+
+def _load_visit_stats() -> dict:
+    try:
+        stats = json.loads(VISIT_STATS_PATH.read_text(encoding="utf-8"))
+        if isinstance(stats, dict) and isinstance(stats.get("daily"), dict):
+            stats.setdefault("total", sum(stats["daily"].values()))
+            return stats
+    except Exception:
+        pass
+    return {"total": 0, "daily": {}}
+
+
+def _record_visit() -> dict[str, int]:
+    """每个浏览器会话只计一次；返回累计与当日次数。"""
+    today = date.today().isoformat()
+    if st.session_state.get("visit_counted"):
+        stats = _load_visit_stats()
+        return {"total": int(stats["total"]), "today": int(stats["daily"].get(today, 0))}
+    st.session_state["visit_counted"] = True
+    stats = _load_visit_stats()
+    stats["total"] = int(stats.get("total", 0)) + 1
+    daily = dict(stats.get("daily") or {})
+    daily[today] = int(daily.get(today, 0)) + 1
+    # 只保留最近一段时间的每日明细，避免文件无限增长
+    if len(daily) > VISIT_HISTORY_DAYS:
+        for old_day in sorted(daily)[: len(daily) - VISIT_HISTORY_DAYS]:
+            daily.pop(old_day, None)
+    payload = {"total": stats["total"], "daily": daily}
+    VISIT_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = VISIT_STATS_PATH.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp_path.replace(VISIT_STATS_PATH)  # 原子替换，避免并发写坏文件
+    return {"total": int(stats["total"]), "today": int(daily[today])}
+
 # ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
 DISCLAIMER_TEXT = (
     "本应用基于国家统计局公布的规模以上工业企业数据及上市公司公开披露的财务报告，"
@@ -276,6 +314,10 @@ with st.sidebar:
         help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
     )
     run_update = st.button("执行更新命令", width="stretch")
+
+    st.divider()
+    visit_stats = _record_visit()
+    st.caption(f"累计访问 {visit_stats['total']} 次 · 今日 {visit_stats['today']} 次")
 
 if run_update:
     try:
