@@ -387,17 +387,6 @@ with st.sidebar:
     )
     run_update = st.button("执行更新命令", width="stretch")
 
-    st.divider()
-    # 侧栏最底部：先报告日期，再访问统计（统计保持为侧栏最后一个元素）
-    _data_date = _latest_data_date()
-    if _data_date:
-        st.caption(f"数据更新至 {_data_date}")
-    visit_stats = _record_visit()
-    st.caption(
-        f"累计访客 {visit_stats['visitors']} · 今日访客 {visit_stats['today_visitors']}"
-        f" · 今日访问 {visit_stats['today_visits']} 次"
-    )
-
 if run_update:
     try:
         parsed_command = parse_update_command(update_command)
@@ -468,6 +457,17 @@ report_period = st.sidebar.selectbox(
     "报告期",
     options=periods,
     format_func=lambda value: pd.Timestamp(value).strftime("%Y-%m-%d"),
+)
+
+# 侧栏最底部：先报告日期，再访问统计（必须放在所有侧栏控件之后，保证排在最下面）
+st.sidebar.divider()
+_data_date = _latest_data_date()
+if _data_date:
+    st.sidebar.caption(f"数据更新至 {_data_date}")
+visit_stats = _record_visit()
+st.sidebar.caption(
+    f"累计访客 {visit_stats['visitors']} · 今日访客 {visit_stats['today_visitors']}"
+    f" · 今日访问 {visit_stats['today_visits']} 次"
 )
 
 try:
