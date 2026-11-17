@@ -1112,6 +1112,64 @@ def _company_history_chart(history: pd.DataFrame, company_id: str) -> pd.DataFra
     return long.rename(columns={"_period": "报告期"})
 
 
+def _render_prosperity_trend_charts(trend_rows: pd.DataFrame) -> None:
+    """渲染一个统计行业大类的月度趋势：景气度（0-100）与两项增长率。"""
+    if trend_rows.empty:
+        st.caption("该大类暂无足够的历史月度数据。")
+        return
+    score_chart = (
+        alt.Chart(trend_rows)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("month:T", title=None),
+            y=alt.Y("prosperity_score:Q", title="景气度(0-100)", scale=alt.Scale(domain=[0, 100])),
+            tooltip=[
+                alt.Tooltip("month:T", title="月份"),
+                alt.Tooltip("prosperity_score:Q", title="景气度"),
+            ],
+        )
+        .properties(width="container", height=220)
+        .configure_view(stroke=None)
+    )
+    growth_long = trend_rows.melt(
+        id_vars=["month"],
+        value_vars=["profit_yoy_latest", "value_added_yoy_latest"],
+        var_name="指标",
+        value_name="数值",
+    )
+    growth_long["指标"] = growth_long["指标"].map(
+        {
+            "profit_yoy_latest": "利润增长率(%)",
+            "value_added_yoy_latest": "工业增加值增长率(%)",
+        }
+    )
+    growth_chart = (
+        alt.Chart(growth_long.dropna(subset=["数值"]))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("month:T", title=None),
+            y=alt.Y("数值:Q", title="同比增长(%)"),
+            color=alt.Color("指标:N", title=None),
+            tooltip=[
+                alt.Tooltip("month:T", title="月份"),
+                alt.Tooltip("指标:N", title="指标"),
+                alt.Tooltip("数值:Q", title="同比增长(%)", format=",.1f"),
+            ],
+        )
+        .properties(width="container", height=220)
+        .configure_view(stroke=None)
+    )
+    left, right = st.columns(2, gap="medium")
+    with left:
+        st.altair_chart(score_chart, width="stretch")
+    with right:
+        st.altair_chart(growth_chart, width="stretch")
+    st.caption(
+        "景气度每月都用截至当月的滚动窗口横截面计算，反映该行业在全部行业中的相对位置；"
+        "利润增长率与工业增加值增长率为统计局公布的当月同比。"
+    )
+
+
 def _render_company_trend_chart(history: pd.DataFrame, company_id: str, label: str) -> None:
     """点击表格行后，在下方渲染该公司五项指标的历史趋势大图。"""
     long = _company_history_chart(history, company_id)
@@ -1608,12 +1666,22 @@ with prosperity_tab:
                 for name in ("景气度趋势", "利润增长趋势", "增加值趋势")
                 if name in shown.columns
             }
-            st.dataframe(
-                shown,
-                width="stretch",
-                hide_index=True,
-                column_config=trend_config,
-            )
+            table_kwargs = {"width": "stretch", "hide_index": True, "column_config": trend_config}
+            if not p_hist.empty:
+                table_kwargs.update(
+                    {"on_select": "rerun", "selection_mode": "single-row", "key": "prosperity_top_select"}
+                )
+            prosperity_event = st.dataframe(shown, **table_kwargs)
+            picked_from_table = ""
+            if not p_hist.empty:
+                picked_rows = list(getattr(prosperity_event, "selection", {}).get("rows", []))
+                if picked_rows:
+                    picked_from_table = str(shown.iloc[picked_rows[0]]["统计行业大类"])
+                    st.markdown(f"**历史趋势：{picked_from_table}**")
+                    _render_prosperity_trend_charts(
+                        p_hist[p_hist["stat_industry"].eq(picked_from_table)].sort_values("month")
+                    )
+                    st.caption("点击表格行首复选框可切换行业；下方「单行业景气趋势」选择器已同步。")
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
             st.caption(
                 "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
@@ -1624,68 +1692,20 @@ with prosperity_tab:
                 st.divider()
                 st.markdown("**单行业景气趋势**")
                 pick_options = sorted(p_hist["stat_industry"].unique())
-                default_pick = str(shown["统计行业大类"].iloc[0])
-                default_index = (
-                    pick_options.index(default_pick) if default_pick in pick_options else 0
-                )
+                # selectbox 完全由 Session State 控制：默认取 TOP 首行，表格选中行会覆盖
+                if "prosperity_trend_pick" not in st.session_state:
+                    default_pick = str(shown["统计行业大类"].iloc[0])
+                    st.session_state["prosperity_trend_pick"] = (
+                        default_pick if default_pick in pick_options else pick_options[0]
+                    )
+                if picked_from_table and picked_from_table in pick_options:
+                    st.session_state["prosperity_trend_pick"] = picked_from_table
                 picked = st.selectbox(
-                    "选择统计行业大类", pick_options, index=default_index, key="prosperity_trend_pick"
+                    "选择统计行业大类", pick_options, key="prosperity_trend_pick"
                 )
-                trend_rows = p_hist[p_hist["stat_industry"].eq(picked)].sort_values("month")
-                if trend_rows.empty:
-                    st.caption("该大类暂无足够的历史月度数据。")
-                else:
-                    score_chart = (
-                        alt.Chart(trend_rows)
-                        .mark_line(point=True)
-                        .encode(
-                            x=alt.X("month:T", title=None),
-                            y=alt.Y("prosperity_score:Q", title="景气度(0-100)", scale=alt.Scale(domain=[0, 100])),
-                            tooltip=[
-                                alt.Tooltip("month:T", title="月份"),
-                                alt.Tooltip("prosperity_score:Q", title="景气度"),
-                            ],
-                        )
-                        .properties(width="container", height=220)
-                        .configure_view(stroke=None)
-                    )
-                    growth_long = trend_rows.melt(
-                        id_vars=["month"],
-                        value_vars=["profit_yoy_latest", "value_added_yoy_latest"],
-                        var_name="指标",
-                        value_name="数值",
-                    )
-                    growth_long["指标"] = growth_long["指标"].map(
-                        {
-                            "profit_yoy_latest": "利润增长率(%)",
-                            "value_added_yoy_latest": "工业增加值增长率(%)",
-                        }
-                    )
-                    growth_chart = (
-                        alt.Chart(growth_long.dropna(subset=["数值"]))
-                        .mark_line(point=True)
-                        .encode(
-                            x=alt.X("month:T", title=None),
-                            y=alt.Y("数值:Q", title="同比增长(%)"),
-                            color=alt.Color("指标:N", title=None),
-                            tooltip=[
-                                alt.Tooltip("month:T", title="月份"),
-                                alt.Tooltip("指标:N", title="指标"),
-                                alt.Tooltip("数值:Q", title="同比增长(%)", format=",.1f"),
-                            ],
-                        )
-                        .properties(width="container", height=220)
-                        .configure_view(stroke=None)
-                    )
-                    left, right = st.columns(2, gap="medium")
-                    with left:
-                        st.altair_chart(score_chart, width="stretch")
-                    with right:
-                        st.altair_chart(growth_chart, width="stretch")
-                    st.caption(
-                        "景气度每月都用截至当月的滚动窗口横截面计算，反映该行业在全部行业中的相对位置；"
-                        "利润增长率与工业增加值增长率为统计局公布的当月同比。"
-                    )
+                _render_prosperity_trend_charts(
+                    p_hist[p_hist["stat_industry"].eq(picked)].sort_values("month")
+                )
 
             st.divider()
             st.subheader("重点跟踪行业大类")
