@@ -580,11 +580,36 @@ def _wechat_qr_html() -> str:
     )
 
 
+AD_CARD_STYLE = """<style>
+a.ad-card { display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; height: 100%; min-height: 92px;
+  border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;
+  text-decoration: none; color: #475569; font-size: 13px; font-weight: 700;
+  text-align: center; padding: 8px 10px; }
+a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca; }
+</style>"""
+
+
+def _ad_card_html() -> str:
+    """免责声明右侧广告位：点击弹出开发者微信大图（复用右上角 :target 弹层）。"""
+    card = (
+        '<a class="ad-card" href="#dev-wechat-qr" title="点击查看开发者微信">'
+        "<span>&#128226; 广告招租，</span>"
+        "<span>请联系开发者</span>"
+        "</a>"
+    )
+    return AD_CARD_STYLE + card
+
+
 _title_col, _qr_col = st.columns([6, 1], vertical_alignment="top")
 with _title_col:
     st.title("万得三级行业动态观察库")
     st.caption("按公告日生成点时排名；默认每个万得三级行业取前 20 名。")
-    st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
+    _banner_col, _ad_col = st.columns([3, 1], gap="small", vertical_alignment="center")
+    with _banner_col:
+        st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
+    with _ad_col:
+        st.markdown(_ad_card_html(), unsafe_allow_html=True)
 with _qr_col:
     _qr_html = _wechat_qr_html()
     if _qr_html:
