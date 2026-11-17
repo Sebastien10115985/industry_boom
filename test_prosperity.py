@@ -9,6 +9,7 @@ import pandas as pd
 from nbs_provider import HISTORY_COLUMNS, import_history, load_history, merge_history, month_from_title
 from prosperity import (
     compute_prosperity,
+    prosperity_history,
     corresponding_industries,
     top_companies_for_stat_industry,
     top_prosperity,
@@ -163,3 +164,28 @@ class ProsperityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProsperityHistoryTests(unittest.TestCase):
+    """逐月回看的历史景气度：每月用截至当月的窗口数据横截面计算。"""
+
+    def test_points_grow_monthly_and_scores_in_range(self):
+        history = build_history()
+        result = prosperity_history(history, window=2, points=3)
+        # 首月只有 1 个月数据（低于 min_months=2）被跳过，后续月份逐月累计
+        self.assertEqual(sorted(result["month"].unique()), ["2026-08", "2026-09"])
+        self.assertTrue(result["prosperity_score"].between(0, 100).all())
+        self.assertTrue(set(result["stat_industry"]) <= set(history["stat_industry"]))
+
+    def test_score_series_changes_over_months(self):
+        history = build_history()
+        result = prosperity_history(history, window=2, points=3)
+        picked = result[result["stat_industry"].eq("计算机、通信和其他电子设备制造业")]
+        self.assertGreaterEqual(len(picked), 2)
+        # 行业 A 利润增速每月抬升，其横截面分位也应上升
+        scores = picked.sort_values("month")["prosperity_score"].tolist()
+        self.assertGreaterEqual(scores[-1], scores[0])
+
+    def test_empty_history_returns_empty_frame(self):
+        result = prosperity_history(pd.DataFrame(), window=2, points=3)
+        self.assertTrue(result.empty)

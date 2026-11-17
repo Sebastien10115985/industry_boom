@@ -128,6 +128,50 @@ def compute_prosperity(
     )
 
 
+HISTORY_COLUMNS = [
+    "month",
+    "stat_industry",
+    "prosperity_score",
+    "profit_yoy_latest",
+    "value_added_yoy_latest",
+]
+
+
+def prosperity_history(
+    history: pd.DataFrame,
+    window: int = DEFAULT_WINDOW,
+    points: int = 6,
+) -> pd.DataFrame:
+    """逐月回看的历史景气度：每个月都用截至当月的 window 个月数据横截面计算。
+
+    分数每月横截面百分位，跨月可直接比较（反映该行业在当期全部行业中的景气位置）。
+    返回长表 [month, stat_industry, prosperity_score, profit_yoy_latest,
+    value_added_yoy_latest]，供趋势图与表格迷你曲线使用。
+    """
+    if history is None or history.empty:
+        return pd.DataFrame(columns=HISTORY_COLUMNS)
+    frame = history.copy()
+    frame["month"] = frame["month"].astype(str)
+    months = sorted(frame["month"].unique())[-max(int(points), 1) :]
+    rows: list[dict[str, object]] = []
+    for month in months:
+        scoped = frame[frame["month"].astype(str).le(month)]
+        scored = compute_prosperity(scoped, window=window)
+        if scored.empty:
+            continue
+        for record in scored.itertuples(index=False):
+            rows.append(
+                {
+                    "month": month,
+                    "stat_industry": str(record.stat_industry),
+                    "prosperity_score": float(record.prosperity_score),
+                    "profit_yoy_latest": record.profit_yoy_latest,
+                    "value_added_yoy_latest": record.value_added_yoy_latest,
+                }
+            )
+    return pd.DataFrame(rows, columns=HISTORY_COLUMNS)
+
+
 def top_prosperity(
     history: pd.DataFrame,
     window: int = DEFAULT_WINDOW,
