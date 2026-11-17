@@ -580,13 +580,14 @@ def _wechat_qr_html() -> str:
 
 
 AD_CARD_STYLE = """<style>
-:root { --ad-shift: -140px; }
+:root { --ad-shift: -140px; --ad-y-up: 0px; --ad-y-down: 0px; }
 @keyframes ad-card-float {
   0%   { transform: translate(0px, 0px) rotate(0deg); }
-  25%  { transform: translate(calc(var(--ad-shift) * 0.55), 10px) rotate(-0.6deg); }
-  48%  { transform: translate(var(--ad-shift), -8px) rotate(0.6deg); }
-  52%  { transform: translate(var(--ad-shift), 4px) rotate(-0.4deg); }
-  75%  { transform: translate(calc(var(--ad-shift) * 0.55), -10px) rotate(0.5deg); }
+  23%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-up) * -0.6)) rotate(-0.5deg); }
+  46%  { transform: translate(var(--ad-shift), calc(var(--ad-y-up) * -0.25)) rotate(0.4deg); }
+  50%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.25)) rotate(-0.3deg); }
+  54%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.3)) rotate(0.3deg); }
+  77%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-down) * 0.6)) rotate(0.5deg); }
   100% { transform: translate(0px, 0px) rotate(0deg); }
 }
 a.ad-card { display: flex; flex-direction: column; align-items: center;
@@ -594,7 +595,7 @@ a.ad-card { display: flex; flex-direction: column; align-items: center;
   border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;
   text-decoration: none; color: #475569; font-size: 13px; font-weight: 700;
   text-align: center; padding: 8px 10px;
-  animation: ad-card-float 14s ease-in-out infinite;
+  animation: ad-card-float 22s linear infinite;
   will-change: transform; }
 a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca;
   animation-play-state: paused; }
@@ -606,6 +607,7 @@ AD_FIT_JS = """
 (function () {
   var doc = window.parent.document;
   var GAP = 20;
+  var Y_MAX = 320;
   function fit() {
     var card = doc.querySelector('a.ad-card');
     var banner = null;
@@ -615,15 +617,25 @@ AD_FIT_JS = """
       if (d.style && d.style.width === 'fit-content' && d.innerText &&
           d.innerText.indexOf('免责声明') >= 0) { banner = d; break; }
     }
-    if (!card || !banner) { return; }
-    // 同步块内临时停用动画读布局位置（浏览器不会绘制中间帧，无闪烁）
-    card.style.animation = 'none';
-    var cardLeft = card.getBoundingClientRect().left;
+    var title = doc.querySelector('h1');
+    if (!card || !banner || !title) { return; }
+    // 用 computed transform 矩阵补偿动画位移还原布局坐标（不重置动画相位）
+    var cs = getComputedStyle(card);
+    var matrix = new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform);
+    var cr = card.getBoundingClientRect();
+    var cardLeft = cr.left - matrix.m41;
+    var cardTop = cr.top - matrix.m42;
     var bannerRight = banner.getBoundingClientRect().right;
-    card.style.animation = '';
+    var titleTop = title.getBoundingClientRect().top;
     var shift = cardLeft - bannerRight - GAP;
     if (shift < 0) { shift = 0; }
+    var up = cardTop - titleTop;
+    var down = banner.getBoundingClientRect().bottom - (cardTop + cr.height);
+    if (up < 0) { up = 0; } if (up > Y_MAX) { up = Y_MAX; }
+    if (down < 0) { down = 0; } if (down > Y_MAX) { down = Y_MAX; }
     doc.documentElement.style.setProperty('--ad-shift', '-' + Math.round(shift) + 'px');
+    doc.documentElement.style.setProperty('--ad-y-up', Math.round(up) + 'px');
+    doc.documentElement.style.setProperty('--ad-y-down', Math.round(down) + 'px');
   }
   window.parent.addEventListener('resize', fit);
   setInterval(fit, 2000);
