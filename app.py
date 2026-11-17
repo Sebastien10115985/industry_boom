@@ -591,7 +591,7 @@ a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca; }
 
 
 def _ad_card_html() -> str:
-    """免责声明右侧广告位：点击弹出开发者微信大图（复用右上角 :target 弹层）。"""
+    """主标题右侧广告位：点击弹出开发者微信大图（复用 :target 弹层）。"""
     card = (
         '<a class="ad-card" href="#dev-wechat-qr" title="点击查看开发者微信">'
         "<span>&#128226; 广告招租，</span>"
@@ -601,19 +601,29 @@ def _ad_card_html() -> str:
     return AD_CARD_STYLE + card
 
 
-_title_col, _qr_col = st.columns([6, 1], vertical_alignment="top")
+def _wechat_qr_overlay_html() -> str:
+    """仅渲染全屏弹层（无右上角缩略图），供广告位点击弹出开发者微信大图。"""
+    if not WECHAT_QR_PATH.exists():
+        return ""
+    mtime = WECHAT_QR_PATH.stat().st_mtime
+    large = _png_base64(str(WECHAT_QR_PATH), 480, mtime)
+    if not large:
+        return ""
+    return (
+        QR_STYLE
+        + '<a id="dev-wechat-qr" class="dev-qr-overlay" href="#dev-wechat-qr-closed">'
+        + '<img src="data:image/png;base64,' + large + '" alt="开发者微信"></a>'
+    )
+
+
+_title_col, _ad_col = st.columns([5, 1], vertical_alignment="center")
 with _title_col:
     st.title("万得三级行业动态观察库")
     st.caption("按公告日生成点时排名；默认每个万得三级行业取前 20 名。")
-    _banner_col, _ad_col = st.columns([3, 1], gap="small", vertical_alignment="center")
-    with _banner_col:
-        st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
-    with _ad_col:
-        st.markdown(_ad_card_html(), unsafe_allow_html=True)
-with _qr_col:
-    _qr_html = _wechat_qr_html()
-    if _qr_html:
-        st.markdown(_qr_html, unsafe_allow_html=True)
+    st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
+with _ad_col:
+    st.markdown(_ad_card_html(), unsafe_allow_html=True)
+st.markdown(_wechat_qr_overlay_html(), unsafe_allow_html=True)
 
 with st.sidebar:
 
@@ -1201,39 +1211,41 @@ def _render_prosperity_trend_charts(trend_rows: pd.DataFrame) -> None:
         .properties(width="container", height=220)
         .configure_view(stroke=None)
     )
-    growth_long = trend_rows.melt(
-        id_vars=["month"],
-        value_vars=["profit_yoy_latest", "value_added_yoy_latest"],
-        var_name="指标",
-        value_name="数值",
-    )
-    growth_long["指标"] = growth_long["指标"].map(
-        {
-            "profit_yoy_latest": "利润增长率(%)",
-            "value_added_yoy_latest": "工业增加值增长率(%)",
-        }
-    )
-    growth_chart = (
-        alt.Chart(growth_long.dropna(subset=["数值"]))
+    profit_chart = (
+        alt.Chart(trend_rows.dropna(subset=["profit_yoy_latest"]))
         .mark_line(point=True)
         .encode(
             x=alt.X("month:T", title=None),
-            y=alt.Y("数值:Q", title="同比增长(%)"),
-            color=alt.Color("指标:N", title=None),
+            y=alt.Y("profit_yoy_latest:Q", title="利润同比增长(%)"),
             tooltip=[
                 alt.Tooltip("month:T", title="月份"),
-                alt.Tooltip("指标:N", title="指标"),
-                alt.Tooltip("数值:Q", title="同比增长(%)", format=",.1f"),
+                alt.Tooltip("profit_yoy_latest:Q", title="利润增长率(%)", format=",.1f"),
             ],
         )
         .properties(width="container", height=220)
         .configure_view(stroke=None)
     )
-    left, right = st.columns(2, gap="medium")
+    added_chart = (
+        alt.Chart(trend_rows.dropna(subset=["value_added_yoy_latest"]))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("month:T", title=None),
+            y=alt.Y("value_added_yoy_latest:Q", title="增加值同比增长(%)"),
+            tooltip=[
+                alt.Tooltip("month:T", title="月份"),
+                alt.Tooltip("value_added_yoy_latest:Q", title="增加值增长率(%)", format=",.1f"),
+            ],
+        )
+        .properties(width="container", height=220)
+        .configure_view(stroke=None)
+    )
+    left, mid, right = st.columns(3, gap="medium")
     with left:
         st.altair_chart(score_chart, width="stretch")
+    with mid:
+        st.altair_chart(profit_chart, width="stretch")
     with right:
-        st.altair_chart(growth_chart, width="stretch")
+        st.altair_chart(added_chart, width="stretch")
     st.caption(
         "景气度每月都用截至当月的滚动窗口横截面计算，反映该行业在全部行业中的相对位置；"
         "利润增长率与工业增加值增长率为统计局公布的当月同比。"
@@ -1748,9 +1760,18 @@ with prosperity_tab:
                 if "景气度趋势" in shown.columns:
                     column = shown.pop("营业收入（亿元）")
                     shown.insert(shown.columns.get_loc("景气度趋势") + 1, "营业收入（亿元）", column)
+                revenue_trend = (
+                    history.dropna(subset=["revenue_yi"])
+                    .sort_values("month")
+                    .groupby("stat_industry")["revenue_yi"]
+                    .apply(lambda series: [float(v) for v in series.dropna().tolist()[-12:]])
+                    .to_dict()
+                )
+                shown["营收趋势"] = shown["统计行业大类"].map(revenue_trend)
+                shown = _place_trend_after(shown, {"营收趋势": "营业收入（亿元）"})
             trend_config = {
                 name: st.column_config.LineChartColumn(name, width="small")
-                for name in ("景气度趋势", "利润增长趋势", "增加值趋势")
+                for name in ("景气度趋势", "利润增长趋势", "增加值趋势", "营收趋势")
                 if name in shown.columns
             }
             _inject_trend_dblclick_hook()
