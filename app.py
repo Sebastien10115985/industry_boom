@@ -379,15 +379,14 @@ def _record_visit() -> dict[str, int]:
 
 # ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
 DISCLAIMER_TEXT = (
-    "本应用基于国家统计局公布的规模以上工业企业数据及上市公司公开披露的财务报告，"
-    "进行公开数据的整理与可视化展示。\n"
-    "相关数据存在发布延迟、缺失或统计口径差异，图表与排名结果不代表对未来走势的判断。"
-    "全部内容仅供量化研究与学习交流之用，不构成任何投资建议、收益承诺或买卖依据。\n"
-    "股市风险大，投资需谨慎。收益和风险自担！"
+    "本应用基于国家统计局公布的规模以上工业生产状况信息及上市公司公开披露的财务报告，进行数据的整理与可视化展示。\n"
+    "相关数据存在发布延迟、缺失或统计口径差异，图表与排名不代表对未来走势的判断。仅供研究与学习交流之用。\n"
+    "不构成任何投资建议、收益承诺或买卖依据。股市风险大，投资需谨慎。收益和风险自担。"
 )
 
 RISK_BANNER_HTML = (
     '<div style="margin-top:6px; padding:10px 14px; background:#fff8e6; '
+    'width:fit-content; max-width:100%; '
     'border-left:4px solid #f59e0b; border-radius:6px; font-size:13px; '
     'line-height:1.8; color:#7a4d00; font-weight:600;">'
     '<span style="color:#b45309; font-weight:800; margin-right:8px;">&#9888; 免责声明</span>'
@@ -582,7 +581,7 @@ def _wechat_qr_html() -> str:
 
 AD_CARD_STYLE = """<style>
 a.ad-card { display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 4px; height: 100%; min-height: 92px;
+  justify-content: center; gap: 4px; height: 100%; min-height: 150px;
   border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;
   text-decoration: none; color: #475569; font-size: 13px; font-weight: 700;
   text-align: center; padding: 8px 10px; }
