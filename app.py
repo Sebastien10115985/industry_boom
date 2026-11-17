@@ -1724,11 +1724,10 @@ with prosperity_tab:
                 picked_rows = list(getattr(prosperity_event, "selection", {}).get("rows", []))
                 if picked_rows:
                     picked_from_table = str(shown.iloc[picked_rows[0]]["统计行业大类"])
-                    st.markdown(f"**历史趋势：{picked_from_table}**")
-                    _render_prosperity_trend_charts(
-                        p_hist[p_hist["stat_industry"].eq(picked_from_table)].sort_values("month")
+                    st.caption(
+                        f"已联动：{picked_from_table}（双击表格行或点击行首复选框可切换，"
+                        "趋势图见下方「单行业景气趋势」）"
                     )
-                    st.caption("双击表格行或点击行首复选框可切换行业；下方「单行业景气趋势」选择器已同步。")
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
             st.caption(
                 "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
@@ -1753,6 +1752,7 @@ with prosperity_tab:
                 picked = st.selectbox(
                     "选择统计行业大类", pick_options, key="prosperity_trend_pick"
                 )
+                st.caption(f"当前查看：{picked}；双击上方 TOP 表任意行（或点击行首复选框）可联动切换。")
                 _render_prosperity_trend_charts(
                     p_hist[p_hist["stat_industry"].eq(picked)].sort_values("month")
                 )
