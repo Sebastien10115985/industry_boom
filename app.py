@@ -1299,16 +1299,8 @@ def _render_prosperity_trend_charts(
         .properties(width="container", height=220)
         .configure_view(stroke=None)
     )
-    left, mid, right = st.columns(3, gap="medium")
-    with left:
-        st.altair_chart(score_chart, width="stretch")
-    with mid:
-        st.altair_chart(profit_chart, width="stretch")
-    with right:
-        st.altair_chart(added_chart, width="stretch")
-    if revenue_rows is not None and not revenue_rows.empty:
-        st.divider()
-        st.markdown("**营业收入趋势（统计局 1—N 月累计口径，亿元）**")
+    has_revenue = revenue_rows is not None and not revenue_rows.empty
+    if has_revenue:
         revenue_chart = (
             alt.Chart(revenue_rows)
             .mark_line(point=True)
@@ -1323,11 +1315,23 @@ def _render_prosperity_trend_charts(
             .properties(width="container", height=220)
             .configure_view(stroke=None)
         )
-        st.altair_chart(revenue_chart, width="stretch")
+    # 上排：景气度趋势 + 营业收入趋势
+    top_left, top_right = st.columns(2 if has_revenue else 1, gap="medium")
+    with top_left:
+        st.altair_chart(score_chart, width="stretch")
+    if has_revenue:
+        with top_right:
+            st.altair_chart(revenue_chart, width="stretch")
         st.caption(
             "营业收入随统计局利润发布逐月更新，为 1—N 月累计值（跨月单调上升属正常口径表现）；"
             "该行业发布覆盖期之外的月份暂无数据。"
         )
+    # 下排：利润同比增长 + 工业增加值同比增长
+    bottom_left, bottom_right = st.columns(2, gap="medium")
+    with bottom_left:
+        st.altair_chart(profit_chart, width="stretch")
+    with bottom_right:
+        st.altair_chart(added_chart, width="stretch")
     st.caption(
         "景气度每月都用截至当月的滚动窗口横截面计算，反映该行业在全部行业中的相对位置；"
         "利润增长率与工业增加值增长率为统计局公布的当月同比。"
