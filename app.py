@@ -1683,7 +1683,7 @@ with prosperity_tab:
                 }
             )
             # 历史趋势：每月用截至当月的窗口数据横截面计算，逐月回看
-            p_hist = prosperity_history(history, window=prosperity_window, points=6)
+            p_hist = prosperity_history(history, window=prosperity_window, points=12)
             if not p_hist.empty:
                 score_trend = p_hist.groupby("stat_industry")["prosperity_score"].apply(list).to_dict()
                 profit_trend = p_hist.groupby("stat_industry")["profit_yoy_latest"].apply(list).to_dict()
@@ -1737,7 +1737,8 @@ with prosperity_tab:
             if not p_hist.empty:
                 st.divider()
                 st.markdown("**单行业景气趋势**")
-                pick_options = sorted(p_hist["stat_industry"].unique())
+                p_hist_full = prosperity_history(history, window=prosperity_window, points=120)
+                pick_options = sorted(p_hist_full["stat_industry"].unique())
                 # selectbox 完全由 Session State 控制：默认取 TOP 首行，表格选中行会覆盖
                 if "prosperity_trend_pick" not in st.session_state:
                     default_pick = str(shown["统计行业大类"].iloc[0])
@@ -1754,7 +1755,7 @@ with prosperity_tab:
                 )
                 st.caption(f"当前查看：{picked}；双击上方 TOP 表任意行（或点击行首复选框）可联动切换。")
                 _render_prosperity_trend_charts(
-                    p_hist[p_hist["stat_industry"].eq(picked)].sort_values("month")
+                    p_hist_full[p_hist_full["stat_industry"].eq(picked)].sort_values("month")
                 )
 
             st.divider()

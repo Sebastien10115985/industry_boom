@@ -353,7 +353,10 @@ def merge_history(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFram
     combined = pd.concat(frames, ignore_index=True)
     for column in ("industry_value_added_yoy", "profit_yoy"):
         combined[column] = pd.to_numeric(combined[column], errors="coerce")
-    combined = combined.drop_duplicates(["month", "stat_industry"], keep="last")
+    # 组内逐列取最后一个非空值：新数据的非空值覆盖旧数据，空值不破坏已有指标
+    combined = combined.groupby(["month", "stat_industry"], as_index=False, sort=False).agg(
+        lambda series: series.dropna().iloc[-1] if series.notna().any() else pd.NA
+    )
     return combined.sort_values(["month", "stat_industry"]).reset_index(drop=True)
 
 
