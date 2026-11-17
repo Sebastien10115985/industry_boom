@@ -1014,6 +1014,34 @@ TREND_TABLE_METRICS: dict[str, str] = {
 }
 TREND_MAX_POINTS = 8
 
+# 迷你趋势列默认紧跟在各自对应的数据列后面
+TREND_ANCHOR_COLUMNS: dict[str, str] = {
+    "营收趋势": "营收(千万元)",
+    "净利润趋势": "净利润(千万元)",
+    "毛利率趋势": "毛利率(%)",
+}
+
+
+def _place_trend_after(frame: pd.DataFrame, anchor_map: dict[str, str]) -> pd.DataFrame:
+    """把迷你趋势列移动到各自锚点数据列的后面，其余列保持原顺序。"""
+    valid = {
+        label: anchor
+        for label, anchor in anchor_map.items()
+        if label in frame.columns and anchor in frame.columns
+    }
+    if not valid:
+        return frame
+    trend_labels = set(valid)
+    order: list[str] = []
+    for column in frame.columns:
+        if column in trend_labels:
+            continue
+        order.append(column)
+        for label, anchor in valid.items():
+            if anchor == column:
+                order.append(label)
+    return frame[order]
+
 
 def _company_trend_map(
     source: pd.DataFrame, metric: str, company_ids: set[str]
@@ -1050,7 +1078,7 @@ def _attach_trend_columns(
     for metric, label in TREND_TABLE_METRICS.items():
         trend_map = _company_trend_map(history, metric, set(company_ids))
         result[label] = [trend_map.get(company_id, []) for company_id in company_ids]
-    return result
+    return _place_trend_after(result, TREND_ANCHOR_COLUMNS)
 
 
 def _trend_column_config(columns: list[str]) -> dict:
@@ -1566,6 +1594,14 @@ with prosperity_tab:
                 )
                 shown["增加值趋势"] = shown["统计行业大类"].map(
                     lambda name: [float(v) for v in added_trend.get(name, []) if pd.notna(v)]
+                )
+                shown = _place_trend_after(
+                    shown,
+                    {
+                        "景气度趋势": "景气度",
+                        "利润增长趋势": "利润增长率（最新月）",
+                        "增加值趋势": "工业增加值增长率（最新月）",
+                    },
                 )
             trend_config = {
                 name: st.column_config.LineChartColumn(name, width="small")
