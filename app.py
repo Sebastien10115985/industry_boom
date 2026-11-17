@@ -404,6 +404,10 @@ def _require_disclaimer() -> None:
             st.rerun()
 
 
+if not st.session_state.get("disclaimer_agreed"):
+    _require_disclaimer()
+    st.stop()
+
 # ---- 显示模式：录屏演示时隐藏证券代码并把公司名称替换为示例企业，防止录屏视频违规 ----
 DISPLAY_MODE_FILE = Path(__file__).resolve().parent / "data" / "display_mode.json"
 DISPLAY_MODE_LABELS = {
