@@ -379,8 +379,8 @@ def _record_visit() -> dict[str, int]:
 # ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
 DISCLAIMER_TEXT = (
     "本应用基于国家统计局公布的规模以上工业企业数据及上市公司公开披露的财务报告，"
-    "进行公开数据的整理与可视化展示。相关数据存在发布延迟、缺失或统计口径差异，"
-    "图表与排名结果不代表对未来走势的判断。"
+    "进行公开数据的整理与可视化展示。\n"
+    "相关数据存在发布延迟、缺失或统计口径差异，图表与排名结果不代表对未来走势的判断。"
     "全部内容仅供量化研究与学习交流之用，不构成任何投资建议、收益承诺或买卖依据；"
     "据此操作产生的一切后果由使用者自行承担，风险自担。"
 )
@@ -390,7 +390,7 @@ RISK_BANNER_HTML = (
     'border-left:4px solid #f59e0b; border-radius:6px; font-size:13px; '
     'line-height:1.8; color:#7a4d00; font-weight:600;">'
     '<span style="color:#b45309; font-weight:800; margin-right:8px;">&#9888; 免责声明</span>'
-    + DISCLAIMER_TEXT
+    + DISCLAIMER_TEXT.replace("\n", "<br>")
     + "</div>"
 )
 
@@ -399,7 +399,7 @@ def _require_disclaimer() -> None:
     """首次打开应用时先渲染声明页，点击「同意」后本会话内不再提示。"""
     with st.container(border=True):
         st.subheader("免责声明与使用条款")
-        st.markdown(DISCLAIMER_TEXT)
+        st.markdown(DISCLAIMER_TEXT.replace("\n", "  \n"))
         st.caption("点击「同意」表示您已阅读、理解并接受上述内容，方可进入使用本应用。")
         if st.button("同意并继续", type="primary", width="stretch"):
             st.session_state["disclaimer_agreed"] = True
