@@ -580,13 +580,14 @@ def _wechat_qr_html() -> str:
 
 
 AD_CARD_STYLE = """<style>
+:root { --ad-shift: -140px; }
 @keyframes ad-card-float {
   0%   { transform: translate(0px, 0px); }
-  16%  { transform: translate(-55px, 14px) rotate(-0.8deg); }
-  36%  { transform: translate(-140px, -8px) rotate(0.7deg); }
-  52%  { transform: translate(-70px, 12px) rotate(-0.5deg); }
-  70%  { transform: translate(-135px, -12px) rotate(0.8deg); }
-  86%  { transform: translate(-45px, 8px) rotate(-0.6deg); }
+  16%  { transform: translate(calc(var(--ad-shift) * 0.4), 14px) rotate(-0.8deg); }
+  36%  { transform: translate(var(--ad-shift), -8px) rotate(0.7deg); }
+  52%  { transform: translate(calc(var(--ad-shift) * 0.5), 12px) rotate(-0.5deg); }
+  70%  { transform: translate(calc(var(--ad-shift) * 0.96), -12px) rotate(0.8deg); }
+  86%  { transform: translate(calc(var(--ad-shift) * 0.3), 8px) rotate(-0.6deg); }
   100% { transform: translate(0px, 0px); }
 }
 a.ad-card { display: flex; flex-direction: column; align-items: center;
@@ -599,6 +600,41 @@ a.ad-card { display: flex; flex-direction: column; align-items: center;
 a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca;
   animation-play-state: paused; }
 </style>"""
+
+
+AD_FIT_JS = """
+<script>
+(function () {
+  var doc = window.parent.document;
+  var GAP = 20;
+  function fit() {
+    var card = doc.querySelector('a.ad-card');
+    var banner = null;
+    var divs = doc.querySelectorAll('div');
+    for (var i = 0; i < divs.length; i++) {
+      var d = divs[i];
+      if (d.style && d.style.width === 'fit-content' && d.innerText &&
+          d.innerText.indexOf('免责声明') >= 0) { banner = d; break; }
+    }
+    if (!card || !banner) { return; }
+    // 同步块内临时停用动画读布局位置（浏览器不会绘制中间帧，无闪烁）
+    card.style.animation = 'none';
+    var cardLeft = card.getBoundingClientRect().left;
+    var bannerRight = banner.getBoundingClientRect().right;
+    card.style.animation = '';
+    var shift = cardLeft - bannerRight - GAP;
+    if (shift > 700) { shift = 700; }
+    if (shift < 0) { shift = 0; }
+    doc.documentElement.style.setProperty('--ad-shift', '-' + Math.round(shift) + 'px');
+  }
+  window.parent.addEventListener('resize', fit);
+  setInterval(fit, 2000);
+  setTimeout(fit, 200);
+  setTimeout(fit, 1200);
+  setTimeout(fit, 3000);
+})();
+</script>
+"""
 
 
 def _ad_card_html() -> str:
@@ -634,6 +670,7 @@ with _title_col:
     st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
 with _ad_col:
     st.markdown(_ad_card_html(), unsafe_allow_html=True)
+components_html(AD_FIT_JS, height=0)
 st.markdown(_wechat_qr_overlay_html(), unsafe_allow_html=True)
 
 with st.sidebar:
