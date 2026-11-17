@@ -582,18 +582,19 @@ def _wechat_qr_html() -> str:
 AD_CARD_STYLE = """<style>
 @keyframes ad-card-float {
   0%   { transform: translate(0px, 0px); }
-  18%  { transform: translate(-7px, 9px) rotate(-0.6deg); }
-  38%  { transform: translate(5px, -7px) rotate(0.5deg); }
-  58%  { transform: translate(-4px, -11px) rotate(-0.4deg); }
-  78%  { transform: translate(8px, 6px) rotate(0.6deg); }
+  16%  { transform: translate(-55px, 14px) rotate(-0.8deg); }
+  36%  { transform: translate(-140px, -8px) rotate(0.7deg); }
+  52%  { transform: translate(-70px, 12px) rotate(-0.5deg); }
+  70%  { transform: translate(-135px, -12px) rotate(0.8deg); }
+  86%  { transform: translate(-45px, 8px) rotate(-0.6deg); }
   100% { transform: translate(0px, 0px); }
 }
 a.ad-card { display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 4px; height: 100%; min-height: 150px;
+  justify-content: center; gap: 4px; height: 100%; min-height: 92px;
   border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;
   text-decoration: none; color: #475569; font-size: 13px; font-weight: 700;
   text-align: center; padding: 8px 10px;
-  animation: ad-card-float 9s ease-in-out infinite;
+  animation: ad-card-float 12s ease-in-out infinite;
   will-change: transform; }
 a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca;
   animation-play-state: paused; }
