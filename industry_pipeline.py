@@ -21,6 +21,7 @@ from typing import Callable, Mapping
 import pandas as pd
 
 from cninfo_provider import CninfoClient, ReportRecord
+from data_io import dedupe_periodic_reports
 from disclosure_pipeline import rank_online_financials
 from financial_extract import MAX_GROSS_MARGIN, extract_financial_metrics
 from industry_catalog import resolve_model_type
@@ -327,7 +328,10 @@ def load_industry_financials(
     source = industry_data_path(industry_l3_id, directory)
     if not source.exists() or source.stat().st_size == 0:
         return pd.DataFrame(columns=STORED_COLUMNS)
-    return pd.read_csv(source, dtype={"industry_l3_id": str}, encoding="utf-8-sig")
+    # 读取即仲裁：历史遗留的「修订公告重复行」在加载时自动清理
+    return dedupe_periodic_reports(
+        pd.read_csv(source, dtype={"industry_l3_id": str}, encoding="utf-8-sig")
+    )
 
 
 def save_industry_financials(
@@ -344,6 +348,7 @@ def save_industry_financials(
     ordered["announcement_date"] = pd.to_datetime(
         ordered["announcement_date"], errors="coerce"
     ).dt.strftime("%Y-%m-%d")
+    ordered = dedupe_periodic_reports(ordered)
     ordered = ordered.sort_values(["company_id", "report_period", "announcement_date"])
     ordered.to_csv(target, index=False, encoding="utf-8-sig")
     return ordered.reset_index(drop=True)
@@ -768,6 +773,7 @@ def sync_industry_reports(
                 partial = pd.concat(
                     [existing, pd.DataFrame(new_rows)], ignore_index=True, sort=False
                 ).drop_duplicates("announcement_id", keep="last")
+                partial = dedupe_periodic_reports(partial)
                 save_industry_financials(industry_id, attach_market_cap(partial), directory)
             except Exception:  # noqa: BLE001 - 中途落盘失败不影响最终写盘
                 pass
@@ -780,7 +786,9 @@ def sync_industry_reports(
     else:
         combined = pd.concat([existing, additions], ignore_index=True, sort=False)
     if not combined.empty:
+        # 先按公告 ID 去掉重复抓取，再按「公司+报告期」仲裁修订公告
         combined = combined.drop_duplicates("announcement_id", keep="last")
+        combined = dedupe_periodic_reports(combined)
         combined = attach_market_cap(combined)
         combined = save_industry_financials(industry_id, combined, directory)
     else:

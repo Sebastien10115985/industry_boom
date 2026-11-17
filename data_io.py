@@ -7,6 +7,29 @@ from typing import BinaryIO
 import pandas as pd
 
 
+def dedupe_periodic_reports(frame: pd.DataFrame) -> pd.DataFrame:
+    """同一公司同一报告期只保留最新公告：修订版公告自动替换旧版本。
+
+    仲裁键为 (company_id, report_period)，按 announcement_date 保留最新一行——
+    去重键用「公司+报告期」而非公告 ID，是因为同一报告期的修订公告有新的公告 ID，
+    按 ID 去重会让修订前后两行并存、排名重复计数。缺少必要列（如上传的演示数据）
+    时原样返回，不做仲裁。
+    """
+    if frame is None or frame.empty:
+        return frame
+    out = frame.copy()
+    if not {"company_id", "report_period", "announcement_date"} <= set(out.columns):
+        return out
+    out["_company_key"] = out["company_id"].astype(str)
+    out["_period_key"] = pd.to_datetime(out["report_period"], errors="coerce")
+    out["_announce_key"] = pd.to_datetime(out["announcement_date"], errors="coerce")
+    out = out.sort_values(
+        ["_company_key", "_period_key", "_announce_key"], na_position="first"
+    )
+    out = out.drop_duplicates(["_company_key", "_period_key"], keep="last")
+    return out.drop(columns=["_company_key", "_period_key", "_announce_key"])
+
+
 COLUMN_ALIASES = {
     "证券代码": "company_id",
     "股票代码": "company_id",

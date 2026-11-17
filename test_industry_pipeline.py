@@ -10,6 +10,8 @@ import pandas as pd
 
 from cninfo_provider import ReportRecord
 from market_cap_provider import attach_market_cap, save_market_caps, sync_market_caps
+from data_io import dedupe_periodic_reports
+
 from industry_pipeline import (
     AI_FOCUS_INDUSTRIES,
     available_report_periods,
@@ -605,3 +607,80 @@ class IndustryPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DedupePeriodicReportsTests(unittest.TestCase):
+    """修订公告仲裁：同一公司同一报告期只保留最新公告。"""
+
+    @staticmethod
+    def _row(company: str, period: str, announce: str, revenue: float) -> dict:
+        return {
+            "company_id": company,
+            "report_period": period,
+            "announcement_date": announce,
+            "revenue": revenue,
+            "announcement_id": f"ANNO-{company}-{announce}",
+        }
+
+    def test_revised_announcement_replaces_old_one(self):
+        frame = pd.DataFrame(
+            [
+                self._row("A1.SZ", "2025-06-30", "2025-08-20", 100.0),
+                self._row("A1.SZ", "2025-06-30", "2025-10-15", 120.0),  # 修订版
+            ]
+        )
+        result = dedupe_periodic_reports(frame)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result.iloc[0]["revenue"], 120.0)
+        self.assertEqual(result.iloc[0]["announcement_date"], "2025-10-15")
+
+    def test_different_periods_are_all_kept(self):
+        frame = pd.DataFrame(
+            [
+                self._row("A1.SZ", "2024-12-31", "2025-03-28", 90.0),
+                self._row("A1.SZ", "2025-06-30", "2025-08-20", 100.0),
+                self._row("B2.SH", "2025-06-30", "2025-08-21", 200.0),
+            ]
+        )
+        result = dedupe_periodic_reports(frame)
+        self.assertEqual(len(result), 3)
+
+    def test_missing_columns_returns_frame_unchanged(self):
+        frame = pd.DataFrame({"company_id": ["A1.SZ"], "revenue": [1.0]})
+        result = dedupe_periodic_reports(frame)
+        self.assertEqual(len(result), 1)
+
+    def test_save_roundtrip_arbitrates_duplicate_periods(self):
+        """落盘与读回都会按「公司+报告期」仲裁，历史重复行被自动清理。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            frame = pd.DataFrame(
+                [
+                    {
+                        "company_id": "A1.SZ",
+                        "company_name": "甲公司",
+                        "industry_l3_id": "850814",
+                        "industry_l3_name": "数字芯片设计",
+                        "model_type": "general",
+                        "report_period": "2025-06-30",
+                        "announcement_date": "2025-08-20",
+                        "revenue": 100.0,
+                        "announcement_id": "ANNO-OLD",
+                    },
+                    {
+                        "company_id": "A1.SZ",
+                        "company_name": "甲公司",
+                        "industry_l3_id": "850814",
+                        "industry_l3_name": "数字芯片设计",
+                        "model_type": "general",
+                        "report_period": "2025-06-30",
+                        "announcement_date": "2025-10-15",
+                        "revenue": 120.0,
+                        "announcement_id": "ANNO-REVISED",
+                    },
+                ]
+            )
+            save_industry_financials("850814", frame, directory=tmp)
+            loaded = load_industry_financials("850814", directory=tmp)
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded.iloc[0]["announcement_id"], "ANNO-REVISED")
+            self.assertEqual(loaded.iloc[0]["revenue"], 120.0)

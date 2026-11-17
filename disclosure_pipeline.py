@@ -7,7 +7,7 @@ from typing import Callable, Mapping
 import pandas as pd
 
 from cninfo_provider import CninfoClient
-from data_io import normalize_input
+from data_io import dedupe_periodic_reports, normalize_input
 from financial_extract import extract_financial_metrics
 from industry_catalog import load_constituents
 from ranking import (
@@ -29,13 +29,15 @@ def load_online_financials(path: str | Path = DEFAULT_DATA_PATH) -> pd.DataFrame
     source = Path(path)
     if not source.exists() or source.stat().st_size == 0:
         return pd.DataFrame()
-    return pd.read_csv(source, encoding="utf-8-sig")
+    # 读取即仲裁：历史遗留的「修订公告重复行」在加载时自动清理
+    return dedupe_periodic_reports(pd.read_csv(source, encoding="utf-8-sig"))
 
 
 def _save_online_financials(data: pd.DataFrame, path: str | Path) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    ordered = data.sort_values(["company_id", "report_period", "announcement_date"])
+    ordered = dedupe_periodic_reports(data)
+    ordered = ordered.sort_values(["company_id", "report_period", "announcement_date"])
     ordered.to_csv(target, index=False, encoding="utf-8-sig")
 
 
@@ -132,7 +134,9 @@ def sync_official_reports(
     else:
         combined = pd.concat([existing, additions], ignore_index=True, sort=False)
     if not combined.empty:
+        # 先按公告 ID 去掉重复抓取，再按「公司+报告期」仲裁修订公告
         combined = combined.drop_duplicates("announcement_id", keep="last")
+        combined = dedupe_periodic_reports(combined)
         _save_online_financials(combined, data_path)
     return combined.reset_index(drop=True), pd.DataFrame(errors)
 
