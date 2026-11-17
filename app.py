@@ -70,6 +70,7 @@ from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
     EXTRA_STAT_INDUSTRIES,
+    PRIMARY_STAT_INDUSTRIES,
     corresponding_industries,
     prosperity_board,
     prosperity_for_industries,
@@ -1655,6 +1656,8 @@ with prosperity_tab:
             st.error(f"景气数据更新失败：{exc}")
 
     history = load_history()
+    if not history.empty:
+        history = history[history["stat_industry"].isin(PRIMARY_STAT_INDUSTRIES)]
     if history.empty:
         st.info(
             "尚未获取景气数据。点击上方按钮从国家统计局更新，或用 "
@@ -2303,6 +2306,8 @@ with detail_tab:
         # 统计局各大类按「其映射的三级行业多数落在哪个 tab」归位
         stat_records: dict[str, list[dict[str, object]]] = {title: [] for title in sector_titles}
         stat_history = load_history()
+        if not stat_history.empty:
+            stat_history = stat_history[stat_history["stat_industry"].isin(PRIMARY_STAT_INDUSTRIES)]
         if not stat_history.empty:
             _, stat_full = prosperity_board(
                 stat_history, window=prosperity_window, top_n=prosperity_top_n

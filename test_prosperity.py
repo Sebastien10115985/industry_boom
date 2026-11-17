@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from nbs_provider import HISTORY_COLUMNS, import_history, load_history, merge_history, month_from_title
+from prosperity import PRIMARY_STAT_INDUSTRIES
 from prosperity import (
     compute_prosperity,
     prosperity_history,
@@ -189,3 +190,16 @@ class ProsperityHistoryTests(unittest.TestCase):
     def test_empty_history_returns_empty_frame(self):
         result = prosperity_history(pd.DataFrame(), window=2, points=3)
         self.assertTrue(result.empty)
+
+
+class PrimaryStatIndustriesTests(unittest.TestCase):
+    """景气度仅跟踪 25 个主要行业（20 个统计局主要行业 + 5 个补充行业）。"""
+
+    def test_exactly_25_unique_industries(self):
+        self.assertEqual(len(PRIMARY_STAT_INDUSTRIES), 25)
+        self.assertEqual(len(set(PRIMARY_STAT_INDUSTRIES)), 25)
+
+    def test_contains_supplementary_high_revenue_industries(self):
+        for name in ("烟草制品业", "造纸和纸制品业", "化学纤维制造业", "石油、煤炭及其他燃料加工业", "燃气生产和供应业"):
+            self.assertIn(name, PRIMARY_STAT_INDUSTRIES)
+
