@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from nbs_provider import HISTORY_COLUMNS, import_history, load_history, merge_history, month_from_title
+from nbs_provider import (
+    HISTORY_COLUMNS,
+    import_history,
+    load_history,
+    merge_history,
+    month_from_title,
+    parse_profit_revenue,
+)
 from prosperity import PRIMARY_STAT_INDUSTRIES
 from prosperity import (
     compute_prosperity,
@@ -47,7 +54,11 @@ def build_history() -> pd.DataFrame:
                 "fetched_at": "2026-10-31",
             }
         )
-    return pd.DataFrame(rows)[HISTORY_COLUMNS]
+    frame = pd.DataFrame(rows)
+    for column in HISTORY_COLUMNS:
+        if column not in frame:
+            frame[column] = None
+    return frame[HISTORY_COLUMNS]
 
 
 def build_ranking() -> pd.DataFrame:
@@ -203,3 +214,43 @@ class PrimaryStatIndustriesTests(unittest.TestCase):
         for name in ("烟草制品业", "造纸和纸制品业", "化学纤维制造业", "石油、煤炭及其他燃料加工业", "燃气生产和供应业"):
             self.assertIn(name, PRIMARY_STAT_INDUSTRIES)
 
+
+
+class ParseProfitRevenueTests(unittest.TestCase):
+    """利润附件应能提取各行业大类的营业收入绝对值（亿元）。"""
+
+    @staticmethod
+    def _workbook():
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["2026年1—9月份规模以上工业企业主要财务指标（分行业）"])
+        sheet.append(["行业", None, "营业收入", None, "利润总额", None])
+        sheet.append([None, None, "绝对值", "同比增长", "绝对值", "同比增长"])
+        sheet.append(["煤炭开采和洗选业", None, 12345.6, -3.3, 4567.8, -10.2])
+        sheet.append(["汽车制造业", None, 65432.1, 12.5, 2345.6, 8.9])
+        sheet.append(["其中：国有控股企业", None, 99999.0, 1.0, 111.0, 2.0])
+        sheet.append(["注：数据为累计值", None, None, None, None, None])
+        return workbook
+
+    def test_extracts_revenue_by_industry(self):
+        values = parse_profit_revenue(self._workbook())
+        self.assertEqual(values["煤炭开采和洗选业"], 12345.6)
+        self.assertEqual(values["汽车制造业"], 65432.1)
+
+    def test_skips_aggregate_and_note_rows(self):
+        values = parse_profit_revenue(self._workbook())
+        self.assertEqual(len(values), 2)
+
+    def test_raises_without_revenue_column(self):
+        from openpyxl import Workbook
+        from nbs_provider import NbsError
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["无关表"])
+        sheet.append(["行业", "利润总额"])
+        sheet.append(["煤炭开采和洗选业", 1.0])
+        with self.assertRaises(NbsError):
+            parse_profit_revenue(workbook)

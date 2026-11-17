@@ -36,6 +36,7 @@ HISTORY_COLUMNS = [
     "stat_industry",
     "industry_value_added_yoy",
     "profit_yoy",
+    "revenue_yi",
     "source_value_added",
     "source_profit",
     "fetched_at",
@@ -229,6 +230,57 @@ def parse_profit_workbook(workbook) -> dict[str, float]:
     raise NbsError("未在工业企业利润附件中找到分行业利润总额数据")
 
 
+def parse_profit_revenue(workbook) -> dict[str, float]:
+    """解析利润附件中各行业大类的营业收入绝对值（单位：亿元，1—N月累计）。"""
+    for sheet in workbook.worksheets:
+        rows = list(sheet.iter_rows(values_only=True))
+        title = " ".join(_cell(row, 0) for row in rows[:2])
+        if "分行业" not in title and not any(
+            "营业收入" in _cell(row, i) for row in rows[:6] for i in range(len(row))
+        ):
+            continue
+        header_index = -1
+        industry_col = 0
+        for index, row in enumerate(rows[:8]):
+            cells = [_cell(row, i) for i in range(len(row))]
+            normalized = [cell.replace(" ", "") for cell in cells]
+            if "行业" in normalized or "分组" in normalized:
+                header_index = index
+                industry_col = (
+                    normalized.index("行业") if "行业" in normalized else normalized.index("分组")
+                )
+                break
+        if header_index < 0:
+            continue
+        header = [_cell(rows[header_index], i) for i in range(len(rows[header_index]))]
+        if "营业收入" not in header:
+            continue
+        rev_col = header.index("营业收入")
+        value_col = rev_col
+        for offset in (1, 2):
+            if header_index + offset >= len(rows):
+                continue
+            sub_header = [
+                _cell(rows[header_index + offset], i)
+                for i in range(len(rows[header_index + offset]))
+            ]
+            if rev_col + 1 < len(sub_header) and "绝对值" in sub_header[rev_col + 1]:
+                value_col = rev_col + 1
+                break
+        result: dict[str, float] = {}
+        for row in rows[header_index + 2 :]:
+            name = _cell(row, industry_col).replace(" ", "")
+            if not name or name.startswith("注") or name in AGGREGATE_ROWS or name.startswith("其中："):
+                continue
+            value = _numeric(_cell(row, value_col))
+            if pd.isna(value):
+                continue
+            result[name] = value
+        if result:
+            return result
+    raise NbsError("未在工业企业利润附件中找到分行业营业收入数据")
+
+
 def parse_value_added_workbook(workbook) -> dict[str, float]:
     """解析“规模以上工业生产主要数据”中主要行业增加值的当月同比增长。"""
     for sheet in workbook.worksheets:
@@ -291,6 +343,7 @@ def collect_monthly_records(
                 "stat_industry": industry,
                 "industry_value_added_yoy": float("nan"),
                 "profit_yoy": float("nan"),
+                "revenue_yi": float("nan"),
                 "source_value_added": "",
                 "source_profit": "",
                 "fetched_at": fetched_at,
@@ -312,11 +365,18 @@ def collect_monthly_records(
     for release in profit_releases:
         for url in _attachment_urls(client, release.url):
             try:
-                values = parse_profit_workbook(client._workbook(url))
+                workbook = client._workbook(url)
+                values = parse_profit_workbook(workbook)
             except NbsError:
                 continue
+            try:
+                revenues = parse_profit_revenue(workbook)
+            except NbsError:
+                revenues = {}
             for industry, value in values.items():
                 put(release.month, industry, "profit_yoy", value, release.url, "source_profit")
+            for industry, value in revenues.items():
+                put(release.month, industry, "revenue_yi", value, release.url, "source_profit")
             break
 
     if not records:
@@ -351,7 +411,7 @@ def merge_history(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFram
     if not frames:
         return pd.DataFrame(columns=columns)
     combined = pd.concat(frames, ignore_index=True)
-    for column in ("industry_value_added_yoy", "profit_yoy"):
+    for column in ("industry_value_added_yoy", "profit_yoy", "revenue_yi"):
         combined[column] = pd.to_numeric(combined[column], errors="coerce")
     # 组内逐列取最后一个非空值：新数据的非空值覆盖旧数据，空值不破坏已有指标
     combined = combined.groupby(["month", "stat_industry"], as_index=False, sort=False).agg(

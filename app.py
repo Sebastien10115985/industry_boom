@@ -1710,6 +1710,19 @@ with prosperity_tab:
                         "增加值趋势": "工业增加值增长率（最新月）",
                     },
                 )
+            # 统计局利润表各行业最新一期累计营业收入（亿元），插在景气度趋势列后
+            revenue_map = (
+                history.dropna(subset=["revenue_yi"])
+                .sort_values("month")
+                .groupby("stat_industry")["revenue_yi"]
+                .last()
+                .to_dict()
+            )
+            if revenue_map:
+                shown["营业收入（亿元）"] = shown["统计行业大类"].map(revenue_map)
+                if "景气度趋势" in shown.columns:
+                    column = shown.pop("营业收入（亿元）")
+                    shown.insert(shown.columns.get_loc("景气度趋势") + 1, "营业收入（亿元）", column)
             trend_config = {
                 name: st.column_config.LineChartColumn(name, width="small")
                 for name in ("景气度趋势", "利润增长趋势", "增加值趋势")
@@ -1772,11 +1785,17 @@ with prosperity_tab:
 
             st.divider()
             st.subheader("重点跟踪行业大类")
-            st.caption(
-                "除自动选出的最景气 TOP5 外，固定跟踪以下行业大类（明细同样见「行业详情」）："
-                + "、".join(EXTRA_STAT_INDUSTRIES)
+            tracked_extra = tuple(
+                name for name in EXTRA_STAT_INDUSTRIES if name in PRIMARY_STAT_INDUSTRIES
             )
-            extra_rows = prosperity_for_industries(history, window=prosperity_window)
+            st.caption(
+                "除自动选出的最景气 TOP5 外，固定跟踪以下行业大类（仅限 25 个主要行业，"
+                "明细同样见「行业详情」）："
+                + "、".join(tracked_extra)
+            )
+            extra_rows = prosperity_for_industries(
+                history, window=prosperity_window, names=tracked_extra
+            )
             extra_columns = [
                 column
                 for column in (
