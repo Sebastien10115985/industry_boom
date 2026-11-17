@@ -1250,8 +1250,10 @@ def _company_history_chart(history: pd.DataFrame, company_id: str) -> pd.DataFra
     return long.rename(columns={"_period": "报告期"})
 
 
-def _render_prosperity_trend_charts(trend_rows: pd.DataFrame) -> None:
-    """渲染一个统计行业大类的月度趋势：景气度（0-100）与两项增长率。"""
+def _render_prosperity_trend_charts(
+    trend_rows: pd.DataFrame, revenue_rows: pd.DataFrame | None = None
+) -> None:
+    """渲染一个统计行业大类的月度趋势：景气度（0-100）、两项增长率与营业收入。"""
     if trend_rows.empty:
         st.caption("该大类暂无足够的历史月度数据。")
         return
@@ -1304,6 +1306,28 @@ def _render_prosperity_trend_charts(trend_rows: pd.DataFrame) -> None:
         st.altair_chart(profit_chart, width="stretch")
     with right:
         st.altair_chart(added_chart, width="stretch")
+    if revenue_rows is not None and not revenue_rows.empty:
+        st.divider()
+        st.markdown("**营业收入趋势（统计局 1—N 月累计口径，亿元）**")
+        revenue_chart = (
+            alt.Chart(revenue_rows)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("month:T", title=None),
+                y=alt.Y("revenue_yi:Q", title="营业收入(亿元)"),
+                tooltip=[
+                    alt.Tooltip("month:T", title="月份"),
+                    alt.Tooltip("revenue_yi:Q", title="营业收入(亿元)", format=",.1f"),
+                ],
+            )
+            .properties(width="container", height=220)
+            .configure_view(stroke=None)
+        )
+        st.altair_chart(revenue_chart, width="stretch")
+        st.caption(
+            "营业收入随统计局利润发布逐月更新，为 1—N 月累计值（跨月单调上升属正常口径表现）；"
+            "该行业发布覆盖期之外的月份暂无数据。"
+        )
     st.caption(
         "景气度每月都用截至当月的滚动窗口横截面计算，反映该行业在全部行业中的相对位置；"
         "利润增长率与工业增加值增长率为统计局公布的当月同比。"
@@ -1884,7 +1908,12 @@ with prosperity_tab:
                 )
                 st.caption(f"当前查看：{picked}；双击上方 TOP 表任意行（或点击行首复选框）可联动切换。")
                 _render_prosperity_trend_charts(
-                    p_hist_full[p_hist_full["stat_industry"].eq(picked)].sort_values("month")
+                    p_hist_full[p_hist_full["stat_industry"].eq(picked)].sort_values("month"),
+                    revenue_rows=(
+                        history[history["stat_industry"].eq(picked)]
+                        .dropna(subset=["revenue_yi"])
+                        .sort_values("month")[["month", "revenue_yi"]]
+                    ),
                 )
 
             st.divider()
