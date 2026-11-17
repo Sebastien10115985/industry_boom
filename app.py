@@ -1671,14 +1671,14 @@ with prosperity_tab:
         if top_table.empty:
             st.warning("可用数据不足，无法计算景气度。")
         else:
-            shown = top_table.rename(
+            shown = top_table.drop(
+                columns=["profit_yoy_mean", "value_added_yoy_mean"], errors="ignore"
+            ).rename(
                 columns={
                     "stat_industry": "统计行业大类",
                     "prosperity_score": "景气度",
                     "profit_yoy_latest": "利润增长率（最新月）",
-                    "profit_yoy_mean": "利润增长率（窗口均值）",
                     "value_added_yoy_latest": "工业增加值增长率（最新月）",
-                    "value_added_yoy_mean": "工业增加值增长率（窗口均值）",
                     "profit_momentum": "利润增长动量",
                     "months": "有效月数",
                     "latest_month": "最新月份",
@@ -1733,6 +1733,15 @@ with prosperity_tab:
                     )
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
             st.caption(
+                "景气度算法：取近 "
+                + str(prosperity_window)
+                + " 个月数据，对每个行业计算利润增长率均值、工业增加值增长率均值、"
+                "最新月利润增长率、利润增长动量（最新月减均值）四项指标；"
+                "每项在当期全部行业中换算成 0—100 的横截面百分位，"
+                "再按 45%、25%、15%、15% 加权平均得到综合分。"
+                "某项指标缺失时按中性分 50 计。"
+            )
+            st.caption(
                 "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
                 "「行业详情」对应子 tab 的「对应统计局大类」区块。"
             )
@@ -1774,9 +1783,7 @@ with prosperity_tab:
                     "stat_industry",
                     "prosperity_score",
                     "profit_yoy_latest",
-                    "profit_yoy_mean",
                     "value_added_yoy_latest",
-                    "value_added_yoy_mean",
                     "profit_momentum",
                     "months",
                     "latest_month",
@@ -1790,9 +1797,7 @@ with prosperity_tab:
                         "stat_industry": "统计行业大类",
                         "prosperity_score": "景气度",
                         "profit_yoy_latest": "利润增长率（最新月）",
-                        "profit_yoy_mean": "利润增长率（窗口均值）",
                         "value_added_yoy_latest": "工业增加值增长率（最新月）",
-                        "value_added_yoy_mean": "工业增加值增长率（窗口均值）",
                         "profit_momentum": "利润增长动量",
                         "months": "有效月数",
                         "latest_month": "最新月份",
