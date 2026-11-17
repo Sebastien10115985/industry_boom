@@ -404,15 +404,13 @@ def _require_disclaimer() -> None:
             st.rerun()
 
 
-# ---- 显示模式：录屏演示时隐藏证券代码与公司名称，防止录屏视频违规 ----
+# ---- 显示模式：录屏演示时隐藏证券代码并把公司名称替换为示例企业，防止录屏视频违规 ----
 DISPLAY_MODE_FILE = Path(__file__).resolve().parent / "data" / "display_mode.json"
 DISPLAY_MODE_LABELS = {
     "normal": "正常显示",
-    "hidden": "演示：隐藏证券代码与公司名称",
     "alias": "演示：名称替换为示例企业",
 }
 LABEL_TO_MODE = {label: mode for mode, label in DISPLAY_MODE_LABELS.items()}
-DEMO_MASK_TEXT = "***"
 
 
 def _load_display_mode() -> str:
@@ -442,7 +440,7 @@ NAME_TO_ALIAS: dict[str, str] = {}
 
 
 def _build_company_aliases(frames: list[pd.DataFrame]) -> None:
-    """演示模式下为全部公司生成「示例企业N」别名（hidden 模式统一用 ***）。"""
+    """演示模式下为全部公司生成「示例企业N」别名。"""
     global COMPANY_ALIASES, NAME_TO_ALIAS
     COMPANY_ALIASES, NAME_TO_ALIAS = {}, {}
     if display_mode == "normal":
@@ -460,9 +458,7 @@ def _build_company_aliases(frames: list[pd.DataFrame]) -> None:
     for index, company_id in enumerate(sorted(ids), 1):
         COMPANY_ALIASES[company_id] = f"示例企业{index}"
         if names.get(company_id):
-            NAME_TO_ALIAS[names[company_id]] = (
-                COMPANY_ALIASES[company_id] if display_mode == "alias" else DEMO_MASK_TEXT
-            )
+            NAME_TO_ALIAS[names[company_id]] = COMPANY_ALIASES[company_id]
 
 
 def _demo_mask_text(text: str) -> str:
@@ -481,13 +477,10 @@ def _demo_mask_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if display_mode == "normal" or frame is None or frame.empty:
         return frame
     out = frame.copy()
-    if "company_name" in out.columns:
-        if display_mode == "alias" and "company_id" in out.columns:
-            out["company_name"] = (
-                out["company_id"].astype(str).map(COMPANY_ALIASES).fillna(out["company_name"])
-            )
-        else:
-            out["company_name"] = DEMO_MASK_TEXT
+    if "company_name" in out.columns and "company_id" in out.columns:
+        out["company_name"] = (
+            out["company_id"].astype(str).map(COMPANY_ALIASES).fillna(out["company_name"])
+        )
     if "source_title" in out.columns:
         out["source_title"] = out["source_title"].astype(str).map(_demo_mask_text)
     if "source_url" in out.columns:
@@ -496,11 +489,10 @@ def _demo_mask_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _demo_visible_columns(columns: list[str]) -> list[str]:
-    """显示层列过滤：两种演示模式都隐藏证券代码列，hidden 模式再隐藏公司名称列。"""
+    """显示层列过滤：演示模式下隐藏证券代码列。"""
     if display_mode == "normal":
         return columns
-    hidden = {"company_id"} | ({"company_name"} if display_mode == "hidden" else set())
-    return [column for column in columns if column not in hidden]
+    return [column for column in columns if column != "company_id"]
 
 
 def _demo_constituents_for(industry_ids) -> pd.DataFrame:
@@ -509,12 +501,10 @@ def _demo_constituents_for(industry_ids) -> pd.DataFrame:
 
 
 def _demo_visible_labels(labels: list[str]) -> list[str]:
-    """显示层列过滤（中文列名版）：演示模式隐藏证券代码列，hidden 模式再隐藏公司名称列。"""
+    """显示层列过滤（中文列名版）：演示模式隐藏证券代码/公司代码列。"""
     if display_mode == "normal":
         return labels
-    hidden_labels = {"公司代码", "证券代码"} | (
-        {"公司名称"} if display_mode == "hidden" else set()
-    )
+    hidden_labels = {"公司代码", "证券代码"}
     return [column for column in labels if column not in hidden_labels]
 
 
@@ -605,7 +595,7 @@ with st.sidebar:
             LABEL_TO_MODE[st.session_state["display_mode_label"]]
         ),
         help=(
-            "录屏防违规：演示模式会隐藏证券代码与公司名称（或替换为示例企业），"
+            "录屏防违规：演示模式会隐藏证券代码，并把公司名称替换为示例企业，"
             "公告原文链接一并隐藏；设置自动保存，刷新后仍生效。"
         ),
     )
