@@ -10,6 +10,7 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.components.v1 import html as components_html
 
 from financing_dividend_provider import attach_financing_dividend
 from data_io import (
@@ -1014,6 +1015,49 @@ TREND_TABLE_METRICS: dict[str, str] = {
 }
 TREND_MAX_POINTS = 8
 
+
+# 双击行自动勾选：Streamlit 表格只认行首复选框，注入全局脚本把双击换算成复选框点击
+TREND_DBLCLICK_JS = """
+<script>
+(function(){
+  var pwin = window.parent;
+  var doc = pwin.document;
+  if (doc.__trendDblClickHook) return;
+  doc.__trendDblClickHook = true;
+  var HEADER_H = 35, ROW_H = 35;
+  doc.addEventListener('dblclick', function(e){
+    var target = e.target;
+    var grid = target && target.closest ? target.closest('[data-testid="stDataFrame"]') : null;
+    if (!grid) return;
+    var canvas = grid.querySelector('canvas');
+    if (!canvas) return;
+    var rect = canvas.getBoundingClientRect();
+    var relY = e.clientY - rect.top;
+    if (relY <= HEADER_H) return;
+    var row = Math.floor((relY - HEADER_H) / ROW_H);
+    var x = rect.left + 12, y = rect.top + HEADER_H + row * ROW_H + ROW_H / 2;
+    ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(type){
+      var init = {bubbles:true, cancelable:true, clientX:x, clientY:y, button:0};
+      var ev;
+      if (type.indexOf('pointer') === 0) {
+        init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true;
+        ev = new pwin.PointerEvent(type, init);
+      } else {
+        ev = new pwin.MouseEvent(type, init);
+      }
+      canvas.dispatchEvent(ev);
+    });
+  }, true);
+})();
+</script>
+"""
+
+
+def _inject_trend_dblclick_hook() -> None:
+    """注入双击行自动勾选的全局脚本（document 级幂等，只挂一次）。"""
+    components_html(TREND_DBLCLICK_JS, height=0)
+
+
 # 迷你趋势列默认紧跟在各自对应的数据列后面
 TREND_ANCHOR_COLUMNS: dict[str, str] = {
     "营收趋势": "营收(千万元)",
@@ -1254,6 +1298,7 @@ def render_industry_group(
                 "2×(本期−上年同期)/(|本期|+|上年同期|)，"
                 "亏损收窄与盈利增长可以同尺度比较，避免上年同期为负时同比失真。"
             )
+        _inject_trend_dblclick_hook()
         table = _attach_trend_columns(
             industry_display_frame(group, sort_by), group, all_industry_financials
         )
@@ -1274,7 +1319,7 @@ def render_industry_group(
                 all_industry_financials, company_id, str(row.get("公司名称", company_id))
             )
         else:
-            st.caption("提示：点击表格中任意一行，下方展示该公司营收、净利润、增长率、毛利率的历史趋势曲线。")
+            st.caption("提示：双击表格任意行（或点击行首复选框），下方展示该公司营收、净利润、增长率、毛利率的历史趋势曲线。")
         if _low_return_grey_mask(group, group.index).any():
             st.caption("灰色行：上市满 10 年且分红融资比低于 1，累计分红仍低于历史融资总额。")
         low_confidence = group[
@@ -1570,6 +1615,7 @@ with watch_tab:
     if selected_industries:
         shown_watchlist = watchlist[watchlist["industry_l3_name"].isin(selected_industries)]
     st.caption(UNIT_CAPTION)
+    _inject_trend_dblclick_hook()
     watch_table = _attach_trend_columns(
         display_frame(shown_watchlist, SORT_METRICS[watch_sort_label]),
         shown_watchlist,
@@ -1666,6 +1712,7 @@ with prosperity_tab:
                 for name in ("景气度趋势", "利润增长趋势", "增加值趋势")
                 if name in shown.columns
             }
+            _inject_trend_dblclick_hook()
             table_kwargs = {"width": "stretch", "hide_index": True, "column_config": trend_config}
             if not p_hist.empty:
                 table_kwargs.update(
@@ -1681,7 +1728,7 @@ with prosperity_tab:
                     _render_prosperity_trend_charts(
                         p_hist[p_hist["stat_industry"].eq(picked_from_table)].sort_values("month")
                     )
-                    st.caption("点击表格行首复选框可切换行业；下方「单行业景气趋势」选择器已同步。")
+                    st.caption("双击表格行或点击行首复选框可切换行业；下方「单行业景气趋势」选择器已同步。")
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
             st.caption(
                 "各大类对应的申万三级行业、全部成分公司与排名靠前公司，已按大类归入"
