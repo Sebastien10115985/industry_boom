@@ -1746,7 +1746,10 @@ with prosperity_tab:
                         default_pick if default_pick in pick_options else pick_options[0]
                     )
                 if picked_from_table and picked_from_table in pick_options:
-                    st.session_state["prosperity_trend_pick"] = picked_from_table
+                    # 仅当表格选中行发生变化时同步一次，避免覆盖用户在选择器里的手动切换
+                    if st.session_state.get("prosperity_last_table_pick") != picked_from_table:
+                        st.session_state["prosperity_last_table_pick"] = picked_from_table
+                        st.session_state["prosperity_trend_pick"] = picked_from_table
                 picked = st.selectbox(
                     "选择统计行业大类", pick_options, key="prosperity_trend_pick"
                 )
