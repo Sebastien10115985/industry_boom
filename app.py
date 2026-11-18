@@ -66,6 +66,12 @@ from liquidity_sources import (
     update_liquidity_cache,
 )
 from nbs_provider import DEFAULT_HISTORY_PATH, load_history, update_history
+from customs_provider import (
+    CustomsError,
+    import_customs_article,
+    load_customs,
+    update_customs,
+)
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1723,8 +1729,8 @@ def render_stat_industry_block(
         else:
             st.dataframe(display_frame(companies), width="stretch", hide_index=True)
 
-watch_tab, prosperity_tab, detail_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "行业详情", "流动性分析", "数据质量", "公告证据", "算法说明"]
+watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["观察库", "行业景气度", "行业详情", "海关数据", "流动性分析", "数据质量", "公告证据", "算法说明"]
 )
 
 with watch_tab:
@@ -2177,6 +2183,119 @@ def render_liquidity_block(
         f"趋势：{summary['trend']}。指数是同向化指标的加权 Z 分，0 代表近一年均值水平，越大越宽松。"
         f"灰带为{span_note}的 10%~90% 分位区间（80% 波动范围），虚线为同期滚动均值。"
     )
+
+
+with customs_tab:
+    st.subheader("海关重点出口商品量值")
+    st.caption(
+        "数据源：海关总署月度公报「(5) China's Major Exports by Quantity and Value（人民币值）」，"
+        "与中文站「重点出口商品量值表」同源，金额单位亿元；同比为累计金额比上年同期（±%）。"
+        "中文站有反爬限制，自动抓取走同源英文站；若失败可下载中文站文章页另存为 HTML 上传导入。"
+    )
+    customs_frame = load_customs()
+    customs_cols = st.columns([1, 2, 1])
+    with customs_cols[0]:
+        if st.button("从海关总署更新", key="customs_update", use_container_width=True):
+            with st.spinner("正在抓取海关月度公报……"):
+                try:
+                    customs_frame = update_customs(months=13)
+                    latest_month = customs_frame["month"].max()
+                    st.success(f"已更新至 {latest_month}，共 {len(customs_frame)} 行。")
+                except CustomsError as exc:
+                    st.warning(f"自动抓取失败：{exc}")
+    with customs_cols[2]:
+        customs_upload = st.file_uploader(
+            "上传量值表文章 HTML（兜底）", type=("html", "htm"), key="customs_upload"
+        )
+        if customs_upload is not None:
+            try:
+                customs_frame = import_customs_article(
+                    customs_upload.getvalue().decode("utf-8", errors="ignore")
+                )
+                st.success("已导入上传文件。")
+            except (CustomsError, UnicodeDecodeError) as exc:
+                st.error(f"导入失败：{exc}")
+    if customs_frame.empty:
+        st.info("暂无海关数据：点击「从海关总署更新」抓取，或上传文章页 HTML 导入。")
+    else:
+        customs_months = sorted(customs_frame["month"].unique())
+        yoy_long = customs_frame.dropna(subset=["export_cum_yoy_pct"])
+        yoy_chart = (
+            alt.Chart(yoy_long)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("month:T", title=None),
+                y=alt.Y("export_cum_yoy_pct:Q", title="累计金额同比(%)"),
+                color=alt.Color("commodity_cn:N", title="商品"),
+                tooltip=[
+                    alt.Tooltip("month:T", title="月份"),
+                    alt.Tooltip("commodity_cn:N", title="商品"),
+                    alt.Tooltip("export_cum_yoy_pct:Q", title="累计金额同比(%)", format="+.1f"),
+                ],
+            )
+            .properties(width="container", height=360)
+            .configure_view(stroke=None)
+        )
+        st.altair_chart(yoy_chart, width="stretch")
+        st.caption("重点出口商品累计金额同比走势（1—N 月累计，跨年 2 月重新累计）。")
+        customs_pick_cols = st.columns([2, 1])
+        with customs_pick_cols[0]:
+            picked_commodities = st.multiselect(
+                "查看累计金额趋势的商品",
+                sorted(customs_frame["commodity_cn"].unique()),
+                default=["机电产品", "高新技术产品", "集成电路"],
+                key="customs_amount_pick",
+            )
+        if picked_commodities:
+            amount_long = customs_frame[customs_frame["commodity_cn"].isin(picked_commodities)]
+            amount_chart = (
+                alt.Chart(amount_long)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("month:T", title=None),
+                    y=alt.Y("export_cum_amount_yi:Q", title="累计金额(亿元)"),
+                    color=alt.Color("commodity_cn:N", title="商品"),
+                    tooltip=[
+                        alt.Tooltip("month:T", title="月份"),
+                        alt.Tooltip("commodity_cn:N", title="商品"),
+                        alt.Tooltip("export_cum_amount_yi:Q", title="累计金额(亿元)", format=",.1f"),
+                    ],
+                )
+                .properties(width="container", height=300)
+                .configure_view(stroke=None)
+            )
+            st.altair_chart(amount_chart, width="stretch")
+        latest_customs = customs_frame[customs_frame["month"] == customs_months[-1]].copy()
+        st.markdown(f"**最新一期明细（{customs_months[-1]}）**")
+        st.dataframe(
+            latest_customs[
+                [
+                    "commodity_cn",
+                    "export_month_amount_yi",
+                    "export_cum_amount_yi",
+                    "export_cum_yoy_pct",
+                ]
+            ].rename(
+                columns={
+                    "commodity_cn": "商品",
+                    "export_month_amount_yi": "当月金额（亿元）",
+                    "export_cum_amount_yi": "累计金额（亿元）",
+                    "export_cum_yoy_pct": "累计金额同比（%）",
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "当月金额（亿元）": st.column_config.NumberColumn(format="%,.1f"),
+                "累计金额（亿元）": st.column_config.NumberColumn(format=",.1f"),
+                "累计金额同比（%）": st.column_config.NumberColumn(format="+.1f"),
+            },
+        )
+        st.caption(
+            "覆盖商品：稀土、铝材、高新技术产品、机电产品及其下的通用机械设备、自动数据处理设备、"
+            "集成电路、汽车、汽车零配件、手机、家用电器、医疗仪器及器械、船舶。"
+            f"当前覆盖月份：{customs_months[0]} 至 {customs_months[-1]}。"
+        )
 
 
 with liquidity_tab:
