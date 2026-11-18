@@ -68,6 +68,7 @@ from liquidity_sources import (
 from nbs_provider import DEFAULT_HISTORY_PATH, load_history, update_history
 from customs_provider import (
     CustomsError,
+    WIND_INDUSTRY_MAP,
     import_customs_article,
     load_customs,
     update_customs,
@@ -2297,6 +2298,7 @@ with customs_tab:
             customs_frame[customs_frame["month"] == customs_months[-1]]
             .sort_values("export_month_amount_yi", ascending=False)
         )
+        latest_customs["wind_industry"] = latest_customs["commodity_cn"].map(WIND_INDUSTRY_MAP)
         st.markdown(f"**最新一期明细（{customs_months[-1]}，按当月出口额从大到小固定排序）**")
         st.dataframe(
             latest_customs[
@@ -2305,6 +2307,7 @@ with customs_tab:
                     "export_month_amount_yi",
                     "export_cum_amount_yi",
                     "export_cum_yoy_pct",
+                    "wind_industry",
                 ]
             ].rename(
                 columns={
@@ -2312,6 +2315,7 @@ with customs_tab:
                     "export_month_amount_yi": "当月金额（亿元）",
                     "export_cum_amount_yi": "累计金额（亿元）",
                     "export_cum_yoy_pct": "累计金额同比（%）",
+                    "wind_industry": "Wind行业映射",
                 }
             ),
             width="stretch",
@@ -2323,14 +2327,14 @@ with customs_tab:
             },
         )
         st.caption(
-            "覆盖商品：稀土、铝材、高新技术产品、通用机械设备、自动数据处理设备（电脑）、"
+            "覆盖商品：稀土、铝材、高新技术产品、通用机械设备、自动数据处理设备、"
             "集成电路、汽车、汽车零配件、手机、家用电器、医疗仪器及器械、船舶（机电产品为上述分项的汇总项，不单列）。"
             f"当前覆盖月份：{customs_months[0]} 至 {customs_months[-1]}。"
         )
         st.caption(
             "「高新技术产品」口径说明：《高新技术产品目录》九个大类的汇总项，（海关统计商品目录分类码 187—195）——187 生物技术"
             "；188 生命科学技术；189 光电技术；190 计算机与通信技术；191 电子技术；192 计算机集成制造技术；193 材料技术；194 航空航天技术；"
-            "195 其他技术。注意其与机电产品、集成电路、自动数据处理设备（电脑）等分项存在交叉重叠，不能直接加总。"
+            "195 其他技术。注意其与机电产品、集成电路、自动数据处理设备等分项存在交叉重叠，不能直接加总。"
         )
         st.caption(
             "官方完整 HS 编码清单参见链接 "

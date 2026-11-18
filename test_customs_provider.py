@@ -88,6 +88,15 @@ class ParseArticleTests(unittest.TestCase):
         matched = match_tracked_items({"Unknown product": (1.0, 2.0, 3.0)})
         self.assertEqual(matched, {})
 
+    def test_wind_industry_map_covers_all_items(self):
+        from customs_provider import CUSTOMS_EXPORT_ITEMS, WIND_INDUSTRY_MAP
+
+        self.assertEqual(
+            {name for name, _ in CUSTOMS_EXPORT_ITEMS}, set(WIND_INDUSTRY_MAP)
+        )
+        for mapping in WIND_INDUSTRY_MAP.values():
+            self.assertTrue(mapping.strip())
+
 
 class MergeAndImportTests(unittest.TestCase):
     def test_merge_prefers_latest_non_null(self):
