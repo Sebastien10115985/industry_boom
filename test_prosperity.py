@@ -84,6 +84,12 @@ class ProsperityTests(unittest.TestCase):
         self.assertEqual(month_from_title("2026年1—9月份全国规模以上工业企业利润增长15.5%"), "2026-09")
         self.assertEqual(month_from_title("2026年9月份规模以上工业增加值增长5.5%"), "2026-09")
         self.assertEqual(month_from_title("2025年1-12月份全国规模以上工业企业利润增长0.6%"), "2025-12")
+        self.assertEqual(
+            month_from_title("2025年全国规模以上工业企业利润增长0.6%"), "2025-12"
+        )
+        self.assertEqual(
+            month_from_title("2024年全国规模以上工业企业利润下降3.3%"), "2024-12"
+        )
 
     def test_compute_prosperity_ranks_higher_growth_first(self) -> None:
         frame = compute_prosperity(build_history(), window=3)
@@ -254,3 +260,31 @@ class ParseProfitRevenueTests(unittest.TestCase):
         sheet.append(["煤炭开采和洗选业", 1.0])
         with self.assertRaises(NbsError):
             parse_profit_revenue(workbook)
+
+
+class ParseProfitWorkbookTests(unittest.TestCase):
+    """利润同比解析需兼容月度（同比增长）与全年（比上年增长）附件表头。"""
+
+    @staticmethod
+    def _workbook(sub_header_word: str) -> object:
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["2026年1—9月份规模以上工业企业主要财务指标（分行业）"])
+        sheet.append(["行业", None, "营业收入", None, "利润总额", None])
+        sheet.append([None, None, "绝对值", "同比增长", "绝对值", f"{sub_header_word}"])
+        sheet.append(["煤炭开采和洗选业", None, 12345.6, -3.3, 4567.8, -10.2])
+        return workbook
+
+    def test_monthly_sub_header(self):
+        from nbs_provider import parse_profit_workbook
+
+        values = parse_profit_workbook(self._workbook("同比增长"))
+        self.assertEqual(values["煤炭开采和洗选业"], -10.2)
+
+    def test_full_year_sub_header(self):
+        from nbs_provider import parse_profit_workbook
+
+        values = parse_profit_workbook(self._workbook("比上年增长"))
+        self.assertEqual(values["煤炭开采和洗选业"], -10.2)

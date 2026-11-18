@@ -127,6 +127,10 @@ def month_from_title(title: str) -> str:
     if single:
         year, month = single.groups()
         return f"{int(year):04d}-{int(month):02d}"
+    # 全年发布（次年初发布）：「2025年全国规模以上工业企业利润增长…」计为当年 12 月
+    full_year = re.search(r"(\d{4})年全国规模以上工业", text)
+    if full_year:
+        return f"{int(full_year.group(1)):04d}-12"
     raise NbsError(f"无法从标题解析月份：{title}")
 
 
@@ -210,7 +214,9 @@ def parse_profit_workbook(workbook) -> dict[str, float]:
         value_col = profit_col
         for offset in (1, 2):
             sub_header = [_cell(rows[header_index + offset], i) for i in range(len(rows[header_index + offset]))]
-            if profit_col + 1 < len(sub_header) and "同比增长" in sub_header[profit_col + 1]:
+            if profit_col + 1 < len(sub_header) and (
+                "同比增长" in sub_header[profit_col + 1] or "比上年增长" in sub_header[profit_col + 1]
+            ):
                 value_col = profit_col + 1
                 break
             if "同比增长" in sub_header[profit_col]:
