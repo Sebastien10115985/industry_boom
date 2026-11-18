@@ -40,7 +40,7 @@ CUSTOMS_EXPORT_ITEMS: tuple[tuple[str, str], ...] = (
     ("铝材", "unwrought aluminium"),
     ("高新技术产品", "hi-tech products"),
     ("通用机械设备", "general machines"),
-    ("自动数据处理设备", "automatic data processing"),
+    ("自动数据处理设备（电脑）", "automatic data processing"),
     ("集成电路", "integrated circuit"),
     ("汽车", "motor vehicles"),
     ("汽车零配件", "parts and accessories of veh"),
