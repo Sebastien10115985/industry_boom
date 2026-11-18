@@ -162,42 +162,53 @@ MODEL_METRIC_LABELS: dict[str, str] = {
 }
 
 
-# 「自定义评分权重」折叠区的强调样式：琥珀描边 + 悬浮阴影 + 加粗标题，暗色主题自动适配
+# 「自定义评分权重」/「自定义指标权重」折叠区的强调样式：琥珀描边 + 悬浮阴影 + 加粗标题，暗色主题自动适配
 CUSTOM_WEIGHT_EXPANDER_CSS = """
 <style>
-div[class*="st-key-mw_box_"] details {
+div[class*="st-key-mw_box_"] details,
+div[class*="st-key-liq_weight_box"] details {
     border: 2px solid #f59e0b !important;
     border-radius: 12px !important;
     background: linear-gradient(180deg, #fffaf0 0%, #ffffff 85%) !important;
     box-shadow: 0 2px 6px rgba(180, 83, 9, 0.12) !important;
     transition: border-color .15s ease, box-shadow .15s ease;
 }
-div[class*="st-key-mw_box_"] details:hover {
+div[class*="st-key-mw_box_"] details:hover,
+div[class*="st-key-liq_weight_box"] details:hover {
     border-color: #d97706 !important;
     box-shadow: 0 4px 14px rgba(217, 119, 6, 0.28) !important;
 }
 div[class*="st-key-mw_box_"] summary,
-div[class*="st-key-mw_box_"] summary p {
+div[class*="st-key-mw_box_"] summary p,
+div[class*="st-key-liq_weight_box"] summary,
+div[class*="st-key-liq_weight_box"] summary p {
     font-weight: 700 !important;
     color: #b45309 !important;
 }
 div[class*="st-key-mw_box_"] summary:hover,
-div[class*="st-key-mw_box_"] summary:hover p {
+div[class*="st-key-mw_box_"] summary:hover p,
+div[class*="st-key-liq_weight_box"] summary:hover,
+div[class*="st-key-liq_weight_box"] summary:hover p {
     color: #92400e !important;
 }
-div[class*="st-key-mw_box_"] summary svg {
+div[class*="st-key-mw_box_"] summary svg,
+div[class*="st-key-liq_weight_box"] summary svg {
     color: #d97706 !important;
 }
 @media (prefers-color-scheme: dark) {
-    div[class*="st-key-mw_box_"] details {
+    div[class*="st-key-mw_box_"] details,
+    div[class*="st-key-liq_weight_box"] details {
         background: linear-gradient(180deg, rgba(245,158,11,.16) 0%, rgba(245,158,11,.04) 85%) !important;
         border-color: #fbbf24 !important;
     }
     div[class*="st-key-mw_box_"] summary,
-    div[class*="st-key-mw_box_"] summary p {
+    div[class*="st-key-mw_box_"] summary p,
+    div[class*="st-key-liq_weight_box"] summary,
+    div[class*="st-key-liq_weight_box"] summary p {
         color: #fbbf24 !important;
     }
-    div[class*="st-key-mw_box_"] summary svg {
+    div[class*="st-key-mw_box_"] summary svg,
+    div[class*="st-key-liq_weight_box"] summary svg {
         color: #fbbf24 !important;
     }
 }
@@ -711,6 +722,7 @@ with st.sidebar:
         file_name="wind_industry_ranking_template.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
+        type="primary",
     )
     top_n = int(st.number_input("每行业观察数量", min_value=1, max_value=100, value=20, step=1))
     minimum_coverage = float(
@@ -743,7 +755,7 @@ with st.sidebar:
         placeholder="更新知名公司 截止 2026-10-31",
         help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
     )
-    run_update = st.button("执行更新命令", width="stretch")
+    run_update = st.button("执行更新命令", width="stretch", type="primary")
 
 if run_update:
     try:
@@ -1546,6 +1558,7 @@ def render_industry_ranking(
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
         key=download_key,
+        type="primary",
     )
 
 
@@ -1696,6 +1709,7 @@ def render_stat_industry_block(
             if st.button(
                 f"拉取「{selected_name}」全部成分公司近一年财报",
                 key=f"sync_{key_suffix}_{selected_id}",
+                type="primary",
             ):
                 sync_progress = st.progress(0.0, text="准备拉取")
 
@@ -1773,6 +1787,7 @@ with watch_tab:
         file_name=f"industry_watchlist_{pd.Timestamp(report_period):%Y%m%d}_asof_{as_of:%Y%m%d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
+        type="primary",
     )
 
 with prosperity_tab:
@@ -2203,7 +2218,12 @@ with customs_tab:
     customs_frame = load_customs()
     customs_cols = st.columns([1, 2, 1])
     with customs_cols[0]:
-        if st.button("从海关总署更新", key="customs_update", use_container_width=True):
+        if st.button(
+            "从海关总署更新",
+            key="customs_update",
+            use_container_width=True,
+            type="primary",
+        ):
             with st.spinner("正在抓取海关月度公报……"):
                 try:
                     customs_frame = update_customs(months=13)
@@ -2332,7 +2352,12 @@ with liquidity_tab:
         "社融存量与存量同比从央行「调查统计司-统计数据-社会融资规模」年度栏目自动解析，"
         "与央行公众号月度报告同源。"
     )
-    if st.button("从公开数据源更新流动性数据", width="content", key="liquidity_update"):
+    if st.button(
+        "从公开数据源更新流动性数据",
+        width="content",
+        key="liquidity_update",
+        type="primary",
+    ):
         liquidity_progress = st.progress(0.0, text="准备更新")
 
         def show_liquidity_progress(step: int, total: int, message: str) -> None:
@@ -2356,33 +2381,35 @@ with liquidity_tab:
     else:
         # ---- 自定义权重：滑块初值 = 持久化文件或默认值；改动即写盘，全部默认时清文件 ----
         custom_weights = _load_custom_liquidity_weights()
-        with st.expander(
-            "自定义指标权重" + ("（已启用自定义）" if custom_weights else ""),
-            expanded=custom_weights is not None,
-        ):
-            st.caption(
-                "拖动调整各指标权重（0 ~ 0.30，组内自动归一化），"
-                "三个指数与成分表即时按新权重重算；设置自动保存到本机，刷新后仍生效。"
-            )
-            for metric_id, spec in METRICS.items():
-                if st.session_state.get(_weight_slider_key(metric_id)) is None:
-                    st.session_state[_weight_slider_key(metric_id)] = (
-                        custom_weights or {}).get(metric_id, float(spec["weight"])
-                    )
-                st.slider(
-                    f"{spec['label']}（{'越高越宽松' if int(spec['direction']) >= 0 else '越低越宽松'}）",
-                    min_value=0.0,
-                    max_value=LIQUIDITY_WEIGHT_SLIDER_MAX,
-                    step=0.01,
-                    key=_weight_slider_key(metric_id),
-                    on_change=_persist_weight_sliders,
+        with st.container(key="liq_weight_box"):
+            with st.expander(
+                "自定义指标权重" + ("（已启用自定义）" if custom_weights else ""),
+                expanded=custom_weights is not None,
+            ):
+                st.caption(
+                    "拖动调整各指标权重（0 ~ 0.30，组内自动归一化），"
+                    "三个指数与成分表即时按新权重重算；设置自动保存到本机，刷新后仍生效。"
                 )
-            st.button(
-                "恢复默认权重",
-                key="liq_w_reset",
-                on_click=_reset_liquidity_weights,
-                width="content",
-            )
+                for metric_id, spec in METRICS.items():
+                    if st.session_state.get(_weight_slider_key(metric_id)) is None:
+                        st.session_state[_weight_slider_key(metric_id)] = (
+                            custom_weights or {}).get(metric_id, float(spec["weight"])
+                        )
+                    st.slider(
+                        f"{spec['label']}（{'越高越宽松' if int(spec['direction']) >= 0 else '越低越宽松'}）",
+                        min_value=0.0,
+                        max_value=LIQUIDITY_WEIGHT_SLIDER_MAX,
+                        step=0.01,
+                        key=_weight_slider_key(metric_id),
+                        on_change=_persist_weight_sliders,
+                    )
+                st.button(
+                    "恢复默认权重",
+                    key="liq_w_reset",
+                    on_click=_reset_liquidity_weights,
+                    width="content",
+                    type="primary",
+                )
         custom_weights = _load_custom_liquidity_weights() or None
         if custom_weights:
             st.info(
@@ -2989,6 +3016,7 @@ with detail_tab:
                         on_click=_reset_tab_model_weights,
                         args=(sector_title, tab_model_names),
                         width="content",
+                        type="primary",
                     )
                 tab_override = _load_model_weights().get(sector_title) or {}
                 if tab_override:
