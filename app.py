@@ -1941,7 +1941,6 @@ with prosperity_tab:
                 "除自动选出的最景气 TOP5 外，按最新一期营业收入排名 TOP20，"
                 "剔除景气 TOP5 与黑色金属冶炼和压延加工业、农副食品加工业、纺织业，"
                 "再按营收高低取前 12 个跟踪（明细同样见「行业详情」）："
-                + "、".join(tracked_extra)
             )
             extra_rows = prosperity_for_industries(
                 history, window=prosperity_window, names=tracked_extra
