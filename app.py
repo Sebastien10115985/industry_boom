@@ -1845,6 +1845,23 @@ with prosperity_tab:
                 if "景气度趋势" in shown.columns:
                     column = shown.pop("营业收入（亿元）")
                     shown.insert(shown.columns.get_loc("景气度趋势") + 1, "营业收入（亿元）", column)
+                # 营业收入累计同比增长（统计局利润发布现成列，增加值未公布行业可用）
+                revenue_yoy_map = (
+                    history.dropna(subset=["revenue_yoy"])
+                    .sort_values("month")
+                    .groupby("stat_industry")["revenue_yoy"]
+                    .last()
+                    .to_dict()
+                )
+                if revenue_yoy_map:
+                    shown["营收增长率（最新月）"] = shown["统计行业大类"].map(revenue_yoy_map)
+                    if "营业收入（亿元）" in shown.columns:
+                        column = shown.pop("营收增长率（最新月）")
+                        shown.insert(
+                            shown.columns.get_loc("营业收入（亿元）") + 1,
+                            "营收增长率（最新月）",
+                            column,
+                        )
                 revenue_trend = (
                     history.dropna(subset=["revenue_yi"])
                     .sort_values("month")

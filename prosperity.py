@@ -90,6 +90,8 @@ def compute_prosperity(
         notes = []
         if pd.isna(value_added_mean):
             notes.append("工业增加值未公布该行业")
+        if pd.isna(profit_latest) and not pd.isna(profit_mean):
+            notes.append("最新期利润同比因上年同期亏损未公布")
         if months_count < window:
             notes.append(f"仅 {months_count}/{window} 个月有数据")
         rows.append(

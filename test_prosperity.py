@@ -13,6 +13,7 @@ from nbs_provider import (
     merge_history,
     month_from_title,
     parse_profit_revenue,
+    parse_profit_revenue_yoy,
 )
 from prosperity import PRIMARY_STAT_INDUSTRIES
 from prosperity import (
@@ -244,6 +245,27 @@ class ParseProfitRevenueTests(unittest.TestCase):
         values = parse_profit_revenue(self._workbook())
         self.assertEqual(values["煤炭开采和洗选业"], 12345.6)
         self.assertEqual(values["汽车制造业"], 65432.1)
+
+    def test_extracts_revenue_growth(self):
+        values = parse_profit_revenue_yoy(self._workbook())
+        self.assertEqual(values["煤炭开采和洗选业"], -3.3)
+        self.assertEqual(values["汽车制造业"], 12.5)
+
+    def test_revenue_growth_with_full_year_sub_header(self):
+        from nbs_provider import _parse_profit_revenue_columns
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["2025年规模以上工业企业主要财务指标（分行业）"])
+        sheet.append(["行  业", "营业收入", "", "营业成本", "", "利润总额", ""])
+        sheet.append(["", "金额", "比上年增长", "金额", "比上年增长", "金额", "比上年增长"])
+        sheet.append(["煤炭开采和洗选业", 31603.3, -11.1, 21120.4, -7.8, 6046.4, -22.2])
+        sheet.append(["石油、煤炭及其他燃料加工业", 40813.2, 6.1, 34053.6, 3.8, 842.2, None])
+        amounts, growth = _parse_profit_revenue_columns(workbook)
+        self.assertEqual(amounts["石油、煤炭及其他燃料加工业"], 40813.2)
+        self.assertEqual(growth["石油、煤炭及其他燃料加工业"], 6.1)
+        self.assertEqual(growth["煤炭开采和洗选业"], -11.1)
 
     def test_skips_aggregate_and_note_rows(self):
         values = parse_profit_revenue(self._workbook())
