@@ -1766,6 +1766,14 @@ with watch_tab:
         _render_company_trend_chart(
             all_industry_financials, company_id, str(row.get("公司名称", company_id))
         )
+    excel_bytes = dataframe_to_excel_bytes(ranking, watchlist, model_weight_table())
+    st.download_button(
+        "下载本期观察库与完整排名",
+        data=excel_bytes,
+        file_name=f"industry_watchlist_{pd.Timestamp(report_period):%Y%m%d}_asof_{as_of:%Y%m%d}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+    )
 
 with prosperity_tab:
     st.caption(
@@ -3300,12 +3308,3 @@ with method_tab:
     weights = model_weight_table().copy()
     weights["weight"] = (weights["weight"] * 100).round(1).astype(str) + "%"
     st.dataframe(weights, width="stretch", hide_index=True)
-
-excel_bytes = dataframe_to_excel_bytes(ranking, watchlist, model_weight_table())
-st.download_button(
-    "下载本期观察库与完整排名",
-    data=excel_bytes,
-    file_name=f"industry_watchlist_{pd.Timestamp(report_period):%Y%m%d}_asof_{as_of:%Y%m%d}.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    width="stretch",
-)
