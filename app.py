@@ -69,7 +69,6 @@ from nbs_provider import DEFAULT_HISTORY_PATH, load_history, update_history
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
-    EXTRA_STAT_INDUSTRIES,
     PRIMARY_STAT_INDUSTRIES,
     corresponding_industries,
     prosperity_board,
@@ -1921,13 +1920,27 @@ with prosperity_tab:
                 )
 
             st.divider()
-            st.subheader("重点跟踪行业大类")
-            tracked_extra = tuple(
-                name for name in EXTRA_STAT_INDUSTRIES if name in PRIMARY_STAT_INDUSTRIES
+            st.subheader("其它重点跟踪行业大类")
+            latest_revenue_map = (
+                history.dropna(subset=["revenue_yi"])
+                .sort_values("month")
+                .groupby("stat_industry")["revenue_yi"]
+                .last()
             )
+            top_by_revenue = (
+                latest_revenue_map.sort_values(ascending=False).index.tolist()[:20]
+            )
+            top5_set = set(top_table["stat_industry"].head(5))
+            hard_excluded = {"黑色金属冶炼和压延加工业", "农副食品加工业", "纺织业"}
+            tracked_extra = tuple(
+                name
+                for name in top_by_revenue
+                if name not in top5_set and name not in hard_excluded
+            )[:12]
             st.caption(
-                "除自动选出的最景气 TOP5 外，固定跟踪以下行业大类（仅限 25 个主要行业，"
-                "明细同样见「行业详情」）："
+                "除自动选出的最景气 TOP5 外，按最新一期营业收入排名 TOP20，"
+                "剔除景气 TOP5 与黑色金属冶炼和压延加工业、农副食品加工业、纺织业，"
+                "再按营收高低取前 12 个跟踪（明细同样见「行业详情」）："
                 + "、".join(tracked_extra)
             )
             extra_rows = prosperity_for_industries(
