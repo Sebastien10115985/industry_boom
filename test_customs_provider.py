@@ -76,8 +76,8 @@ class ParseArticleTests(unittest.TestCase):
         _, items = parse_major_exports(ARTICLE_HTML)
         matched = match_tracked_items(items)
         self.assertIn("稀土", matched)
-        self.assertIn("机电产品", matched)
         self.assertIn("集成电路", matched)
+        self.assertNotIn("机电产品", matched)
         self.assertEqual(matched["集成电路"][1], 2677.8)
 
     def test_match_missing_item_raises(self):

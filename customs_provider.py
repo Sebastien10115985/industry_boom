@@ -34,11 +34,11 @@ CUSTOMS_COLUMNS = (
 )
 
 #: 重点跟踪的出口商品：（中文名， 英文行名匹配关键词，不区分大小写）
+#: 机电产品为各分项的汇总项，不单独跟踪。
 CUSTOMS_EXPORT_ITEMS: tuple[tuple[str, str], ...] = (
     ("稀土", "rare-earth"),
     ("铝材", "unwrought aluminium"),
     ("高新技术产品", "hi-tech products"),
-    ("机电产品", "mechanical and electrical"),
     ("通用机械设备", "general machines"),
     ("自动数据处理设备", "automatic data processing"),
     ("集成电路", "integrated circuit"),

@@ -2243,7 +2243,7 @@ with customs_tab:
             picked_commodities = st.multiselect(
                 "查看累计金额趋势的商品",
                 sorted(customs_frame["commodity_cn"].unique()),
-                default=["机电产品", "高新技术产品", "集成电路"],
+                default=["高新技术产品", "集成电路", "汽车"],
                 key="customs_amount_pick",
             )
         if picked_commodities:
@@ -2265,8 +2265,11 @@ with customs_tab:
                 .configure_view(stroke=None)
             )
             st.altair_chart(amount_chart, width="stretch")
-        latest_customs = customs_frame[customs_frame["month"] == customs_months[-1]].copy()
-        st.markdown(f"**最新一期明细（{customs_months[-1]}）**")
+        latest_customs = (
+            customs_frame[customs_frame["month"] == customs_months[-1]]
+            .sort_values("export_month_amount_yi", ascending=False)
+        )
+        st.markdown(f"**最新一期明细（{customs_months[-1]}，按当月出口额从大到小固定排序）**")
         st.dataframe(
             latest_customs[
                 [
@@ -2286,14 +2289,14 @@ with customs_tab:
             width="stretch",
             hide_index=True,
             column_config={
-                "当月金额（亿元）": st.column_config.NumberColumn(format="%,.1f"),
-                "累计金额（亿元）": st.column_config.NumberColumn(format=",.1f"),
-                "累计金额同比（%）": st.column_config.NumberColumn(format="+.1f"),
+                "当月金额（亿元）": st.column_config.NumberColumn(format="%.1f"),
+                "累计金额（亿元）": st.column_config.NumberColumn(format="%.1f"),
+                "累计金额同比（%）": st.column_config.NumberColumn(format="+%.1f"),
             },
         )
         st.caption(
-            "覆盖商品：稀土、铝材、高新技术产品、机电产品及其下的通用机械设备、自动数据处理设备、"
-            "集成电路、汽车、汽车零配件、手机、家用电器、医疗仪器及器械、船舶。"
+            "覆盖商品：稀土、铝材、高新技术产品、通用机械设备、自动数据处理设备、"
+            "集成电路、汽车、汽车零配件、手机、家用电器、医疗仪器及器械、船舶（机电产品为上述分项的汇总项，不单列）。"
             f"当前覆盖月份：{customs_months[0]} 至 {customs_months[-1]}。"
         )
 
