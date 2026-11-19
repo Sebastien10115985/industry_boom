@@ -1842,13 +1842,16 @@ with risk_tab:
 
         risk_frame["ema60"] = closes.ewm(span=60, adjust=False).mean()
         window = risk_frame
+        # vconcat 合并为单一图表组件，zoom 参数在 K 线与成交量之间真正联动
         zoom = alt.selection_interval(encodings=["x"], bind="scales", name="时间轴平移缩放")
-        base_chart = alt.Chart(window).encode(x=alt.X("date:T", title=None))
-        candle_range = base_chart.mark_bar(size=1.5).encode(
+        candle_base = alt.Chart(window).encode(
+            x=alt.X("date:T", title=None, axis=alt.Axis(labels=False, ticks=False, domain=False))
+        )
+        candle_range = candle_base.mark_bar(size=1.5).encode(
             y=alt.Y("low:Q", title=None, scale=alt.Scale(zero=False)),
             y2="high:Q",
         )
-        candle_body = base_chart.mark_bar(size=1).encode(
+        candle_body = candle_base.mark_bar(size=1).encode(
             y=alt.Y("open:Q", scale=alt.Scale(zero=False)),
             y2="close:Q",
             color=alt.condition(
@@ -1857,11 +1860,17 @@ with risk_tab:
                 alt.value("#3d9c5f"),
             ),
         )
-        ema60_line = base_chart.mark_line(color="#c98a1c", size=2).encode(
+        ema60_line = candle_base.mark_line(color="#c98a1c", size=2).encode(
             y=alt.Y("ema60:Q", scale=alt.Scale(zero=False)),
             tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ema60:Q", title="60日EMA", format=",.1f")],
         )
-        volume_chart = base_chart.mark_bar(color="#9fb3c8").encode(
+        candle_panel = (
+            (candle_range + candle_body + ema60_line)
+            .add_params(zoom)
+            .properties(width="container", height=280)
+        )
+        volume_base = alt.Chart(window).encode(x=alt.X("date:T", title=None))
+        volume_chart = volume_base.mark_bar(color="#9fb3c8").encode(
             y=alt.Y("volume:Q", title="成交量(手)"),
             tooltip=[
                 alt.Tooltip("date:T", title="日期"),
@@ -1872,16 +1881,8 @@ with risk_tab:
                 alt.Tooltip("turnover_yi:Q", title="成交额(亿)", format=",.1f"),
             ],
         )
-        st.altair_chart(
-            (candle_range + candle_body + ema60_line)
-            .add_params(zoom)
-            .properties(width="container", height=260),
-            width="stretch",
-        )
-        st.altair_chart(
-            volume_chart.add_params(zoom).properties(width="container", height=110),
-            width="stretch",
-        )
+        volume_panel = volume_chart.add_params(zoom).properties(width="container", height=110)
+        st.altair_chart(alt.vconcat(candle_panel, volume_panel), width="stretch")
         st.caption(
             f"共 {len(window)} 个交易日（{window['date'].min():%Y-%m-%d} ~ {window['date'].max():%Y-%m-%d}），"
             "红涨绿跌，黄色实线为60日EMA（指数移动平均，用于观察大趋势）；"
