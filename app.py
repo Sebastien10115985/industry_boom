@@ -17,8 +17,8 @@ from data_io import (
     dataframe_to_excel_bytes,
     normalize_input,
 )
-from disclosure_pipeline import DEFAULT_DATA_PATH, load_online_financials, sync_official_reports
-from industry_catalog import load_catalog, suggest_model_type
+from disclosure_pipeline import DEFAULT_DATA_PATH, load_online_financials
+from industry_catalog import suggest_model_type
 from industry_match import builtin_industry_frame
 from industry_pipeline import (
     DEFAULT_LOOKBACK_DAYS,
@@ -37,7 +37,6 @@ from industry_pipeline import (
 from industry_match import (
     SOURCE_URL,
     SNAPSHOT_DATE,
-    industry_label,
     industry_options,
     search_industries,
 )
@@ -85,7 +84,6 @@ from admin_auth import verify_admin_key
 from prosperity_mapping import mapped_industry_ids
 from ranking import MODEL_SPECS, model_weight_table, prepare_growth_metrics, score_snapshot, select_snapshot
 from sw_constituents import SNAPSHOT_DATE, constituents_for, industry_coverage
-from user_commands import parse_update_command
 
 st.set_page_config(page_title="万得三级行业观察库", page_icon=None, layout="wide")
 st.markdown(
@@ -738,66 +736,10 @@ with st.sidebar:
     minimum_coverage = float(
         st.slider("最低数据完整度", min_value=0.0, max_value=1.0, value=0.60, step=0.05)
     )
-    model_override = st.selectbox(
-        "排名模型",
-        options=["auto", *MODEL_SPECS.keys()],
-        format_func=lambda value: "自动识别" if value == "auto" else MODEL_SPECS[value].label,
-    )
     st.caption("数据源：巨潮资讯正式定期报告的本地提取缓存，不含演示数据。")
     st.divider()
-    catalog = load_catalog()
     taxonomy = industry_options()
-    st.caption(
-        f"内置申万三级行业 {len(taxonomy)} 个（快照 {SNAPSHOT_DATE}）。"
-        "没有万得授权时直接使用该固定列表；行业名称支持语义模糊匹配。"
-    )
-    industry_keyword = st.text_input("三级行业模糊搜索", placeholder="例如：白酒、锂电池、半导体设备")
-    matched = search_industries(industry_keyword, limit=200)
-    selected_industry_id = st.selectbox(
-        "定位三级行业",
-        options=matched["industry_l3_id"].tolist(),
-        format_func=lambda value: industry_label(matched[matched["industry_l3_id"].eq(value)].iloc[0]),
-    )
-    if catalog.empty:
-        st.warning("尚未固化行业目录。")
-    update_command = st.text_input(
-        "更新命令",
-        placeholder="更新知名公司 截止 2026-10-31",
-        help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
-    )
-    run_update = st.button("执行更新命令", width="stretch", type="primary")
-
-if run_update:
-    try:
-        parsed_command = parse_update_command(update_command)
-        progress_bar = st.progress(0.0, text="准备更新")
-        if parsed_command.scope == "prosperity":
-            with st.spinner("正在从国家统计局检索分行业工业增加值与利润数据。"):
-                history = update_history(months=6)
-            progress_bar.progress(1.0, text="更新完成")
-            months = sorted(history["month"].astype(str).unique())
-            st.success(
-                f"景气数据已更新，本地共 {len(history)} 条月度记录，最新月份 {months[-1] if months else '无'}。"
-            )
-        else:
-            progress_bar.progress(0.0, text="准备同步官方定期报告")
-
-            def show_progress(current: int, total: int, message: str) -> None:
-                progress_bar.progress(current / max(total, 1), text=message)
-
-            with st.spinner("正在从巨潮资讯检索并解析正式定期报告，请勿关闭页面。"):
-                updated_data, update_errors = sync_official_reports(
-                    as_of_date=parsed_command.as_of_date,
-                    scope=parsed_command.scope,
-                    company_ids=parsed_command.company_ids or None,
-                    progress=show_progress,
-                )
-            progress_bar.progress(1.0, text="更新完成")
-            st.success(f"本地已累计 {len(updated_data)} 条正式定期报告记录。")
-            if not update_errors.empty:
-                st.warning(f"有 {len(update_errors)} 条检索或提取失败，请使用命令行查看错误明细。")
-    except Exception as exc:
-        st.error(f"更新失败：{exc}")
+    st.caption(f"内置申万三级行业 {len(taxonomy)} 个（快照 {SNAPSHOT_DATE}）。")
 
 try:
     raw_data = load_online_financials(DEFAULT_DATA_PATH)
@@ -811,8 +753,6 @@ try:
     st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
 
     normalized = normalize_input(raw_data)
-    if model_override != "auto":
-        normalized["model_type"] = model_override
     # 演示模式：别名要覆盖全部公司，先加载行业财报全量缓存再统一脱敏
     all_industry_financials = load_all_industry_financials()
     _build_company_aliases([normalized, all_industry_financials])
