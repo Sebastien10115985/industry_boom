@@ -1711,8 +1711,8 @@ with risk_tab:
 
     regime_value = load_regime()
     ruler_rows = []
-    for x0 in range(-100, 100, 2):
-        mid = x0 + 1
+    for x0 in range(-100, 100):
+        mid = x0 + 0.5
         if mid <= -20:
             t = min(1.0, max(0.0, (-20 - mid) / 80))
             color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
@@ -1721,7 +1721,7 @@ with risk_tab:
             color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
         else:
             color = "#c2c2c2"
-        ruler_rows.append({"x0": x0, "x1": x0 + 2, "y0": 0.7, "y1": 1.7, "色": color})
+        ruler_rows.append({"x0": x0, "x1": x0 + 1, "y0": 0.7, "y1": 1.7, "色": color})
     ruler_frame = pd.DataFrame(ruler_rows)
     regime_base = alt.Chart(ruler_frame).encode(
         x=alt.X(
@@ -1762,18 +1762,56 @@ with risk_tab:
             text=alt.Text("标签:N"),
         )
     )
-    st.altair_chart(
-        (regime_ruler + regime_notes + regime_cursor + regime_label).properties(width="container", height=150),
-        width="stretch",
-    )
+    regime_chart = (
+        regime_ruler + regime_notes + regime_cursor + regime_label
+    ).properties(width="container", height=150)
     if is_admin:
-        regime_input = st.slider(
-            "设置市场状态游标", min_value=-100, max_value=100, value=int(round(regime_value)), key="regime_slider"
+        # 管理员专用：单视图纯矩形卡尺（Streamlit 仅对单视图图表支持 selection），点击即设置游标
+        def _ruler_color(mid: float) -> str:
+            if mid <= -20:
+                return _lerp_hex((134, 201, 138), (13, 90, 24), min(1.0, max(0.0, (-20 - mid) / 80)))
+            if mid >= 20:
+                return _lerp_hex((229, 139, 125), (126, 21, 11), min(1.0, max(0.0, (mid - 20) / 80)))
+            return "#c2c2c2"
+
+        cursor_cell = min(99, max(-100, int(regime_value // 1)))
+        admin_rows = []
+        for x0 in range(-100, 100):
+            if x0 == cursor_cell:
+                color, y0v, y1v = "#1f2937", 0.05, 1.95
+            else:
+                color, y0v, y1v = _ruler_color(x0 + 0.5), 0.7, 1.7
+            admin_rows.append({"x0": x0, "x1": x0 + 1, "y0": y0v, "y1": y1v, "色": color})
+        admin_base = alt.Chart(pd.DataFrame(admin_rows)).encode(
+            x=alt.X(
+                "x0:Q",
+                title=None,
+                scale=alt.Scale(domain=[-100, 100]),
+                axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
+            ),
         )
-        if abs(regime_input - regime_value) >= 1:
-            save_regime(regime_input, is_admin=True)
-            regime_value = float(regime_input)
-            st.rerun()
+        pick = alt.selection_point(encodings=["x"], nearest=True, name="设置游标")
+        admin_chart = admin_base.mark_rect().add_params(pick).encode(
+            x2="x1:Q",
+            y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+            y2="y1:Q",
+            color=alt.Color("色:N", scale=None, legend=None),
+        )
+        pick_event = st.altair_chart(admin_chart, on_select="rerun", width="stretch")
+        st.caption(
+            f"管理员：点击卡尺任意位置，游标（黑柱，当前 {regime_value:.0f}）即移动到该处并全局保存。"
+            "左绿熊市 / 中灰震荡 / 右红牛市。"
+        )
+        picked = ((pick_event.selection or {}).get("设置游标") or []) if pick_event is not None else []
+        if picked:
+            raw_x = picked[0].get("x")
+            if raw_x is not None:
+                new_value = min(100.0, max(-100.0, float(raw_x)))
+                if abs(new_value - regime_value) >= 0.5:
+                    save_regime(new_value, is_admin=True)
+                    st.rerun()
+    else:
+        st.altair_chart(regime_chart, width="stretch")
     st.divider()
 
     st.caption(
