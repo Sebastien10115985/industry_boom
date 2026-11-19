@@ -59,3 +59,8 @@ Thumbs.db
 
 # 管理员密钥（本地生成，勿提交）
 data/admin_secret.txt
+
+# PyInstaller 打包产物（源码与构建脚本入库，产物不入库）
+build/
+dist/
+*.spec
