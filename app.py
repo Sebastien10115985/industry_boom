@@ -1945,12 +1945,14 @@ with risk_tab:
         st.altair_chart(vote_chart, width="stretch")
         icon_cols = st.columns(4)
         for slot, item in zip(icon_cols, vote_values):
-            up_col, name_col, down_col = slot.columns([1, 1.6, 1])
+            _, up_col, name_col, down_col, _ = slot.columns(
+                [0.85, 0.5, 1.1, 0.5, 0.85], gap="small"
+            )
             if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
                 vote_risk(item, True, macro_session)
                 st.rerun()
             name_col.markdown(
-                f"<div style='text-align:center;font-size:0.92rem;font-weight:600;padding-top:6px'>{item}</div>",
+                f"<div style='text-align:center;white-space:nowrap;font-size:0.92rem;font-weight:600;padding-top:6px'>{item}</div>",
                 unsafe_allow_html=True,
             )
             if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
