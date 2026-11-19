@@ -21,6 +21,7 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent / "data" / "prosperity"
 DEFAULT_VOTES_PATH = DATA_DIR / "macro_risk_votes.json"
 DEFAULT_COMMENTS_PATH = DATA_DIR / "macro_comments.json"
+DEFAULT_REGIME_PATH = DATA_DIR / "market_regime.json"
 
 #: 宏观风险项与默认分值
 DEFAULT_RISK_VALUES: dict[str, float] = {
@@ -176,4 +177,27 @@ def feature_comment(comment_id: str, path: str | Path = DEFAULT_COMMENTS_PATH, i
     data["buffer"] = [r for r in data["buffer"] if r.get("id") != comment_id]
     data["global"].insert(0, moved)
     _atomic_write_json(data, path)
+    return True
+
+
+# ---- 市场状态游标（IF趋势上方卡尺，管理员可设） ----
+
+REGIME_MIN, REGIME_MAX = -100, 100
+
+
+def load_regime(path: str | Path = DEFAULT_REGIME_PATH) -> float:
+    """当前市场状态游标值（-100 深熊 ~ 100 深牛），默认 -80。"""
+    data = _read_json(path, {"value": -80.0})
+    try:
+        return float(min(REGIME_MAX, max(REGIME_MIN, data.get("value", -80.0))))
+    except (TypeError, ValueError):
+        return -80.0
+
+
+def save_regime(value: float, path: str | Path = DEFAULT_REGIME_PATH, is_admin: bool = False) -> bool:
+    """管理员设置游标值；非管理员拒绝。"""
+    if not is_admin:
+        return False
+    clamped = min(REGIME_MAX, max(REGIME_MIN, float(value)))
+    _atomic_write_json({"value": clamped, "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")}, path)
     return True

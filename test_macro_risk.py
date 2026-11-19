@@ -15,9 +15,11 @@ from macro_risk import (
     delete_comment,
     feature_comment,
     load_comments,
+    load_regime,
     load_votes,
     load_voters,
     new_session_id,
+    save_regime,
     vote_risk,
 )
 
@@ -27,6 +29,7 @@ class MacroRiskTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.votes_path = Path(self.tmp.name) / "votes.json"
         self.comments_path = Path(self.tmp.name) / "comments.json"
+        self.regime_path = Path(self.tmp.name) / "regime.json"
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -102,6 +105,20 @@ class MacroRiskTest(unittest.TestCase):
         self.assertEqual(len(record["content"]), 500)
         with self.assertRaises(ValueError):
             add_comment("   ", new_session_id(), "1.1.1.1", self.comments_path)
+
+    def test_regime_load_default_and_admin_only_save(self) -> None:
+        self.assertEqual(load_regime(self.regime_path), -80.0)
+        # 非管理员不能改
+        self.assertFalse(save_regime(30.0, self.regime_path, is_admin=False))
+        self.assertEqual(load_regime(self.regime_path), -80.0)
+        # 管理员可改
+        self.assertTrue(save_regime(30.0, self.regime_path, is_admin=True))
+        self.assertEqual(load_regime(self.regime_path), 30.0)
+        # 限幅
+        save_regime(500, self.regime_path, is_admin=True)
+        self.assertEqual(load_regime(self.regime_path), 100.0)
+        save_regime(-999, self.regime_path, is_admin=True)
+        self.assertEqual(load_regime(self.regime_path), -100.0)
 
 
 if __name__ == "__main__":
