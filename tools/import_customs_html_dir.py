@@ -40,16 +40,117 @@ BACKFILL_DIR = Path(__file__).resolve().parent.parent / "data" / "customs_html_b
 
 def month_from_file(path: Path) -> str | None:
     """从内容标题解析统计月份（YYYY-MM）；文件名是发布时间不可靠，仅作兜底。"""
+    if path.suffix.lower() in {".xls", ".xlsx"}:
+        return _month_from_xls(path) or _month_from_stem(path)
     text = path.read_text(encoding="utf-8", errors="ignore")
     title_match = re.search(r"<title>(.*?)</title>", text, re.S | re.I)
     title = _strip_html(title_match.group(1)) if title_match else ""
     match = re.search(r"(20\d{2})\s*年\s*(1[0-2]|[1-9])\s*月", title + " " + text[:3000])
     if match:
         return f"{match.group(1)}-{int(match.group(2)):02d}"
+    return _month_from_stem(path)
+
+
+def _month_from_stem(path: Path) -> str | None:
     match = re.search(r"(20\d{2})[-_.]?(1[0-2]|[1-9])", path.stem)
     if match:
         return f"{match.group(1)}-{int(match.group(2)):02d}"
     return None
+
+
+def _load_rmb_sheet(path: Path) -> tuple[pd.DataFrame, str]:
+    """读取 XLS 中「出口主要商品量值表（人民币值）」sheet，返回 (表, 期数标题文本)。"""
+    book = pd.ExcelFile(path, engine="xlrd" if path.suffix.lower() == ".xls" else "openpyxl")
+    sheet = next((s for s in book.sheet_names if "人民币值" in s and "出口主要商品" in s), None)
+    if sheet is None:
+        raise CustomsError(f"{path.name} 中没有「出口主要商品量值表（人民币值）」sheet（现有：{book.sheet_names}）")
+    frame = book.parse(sheet, header=None)
+    title = ""
+    for i in range(min(6, len(frame))):
+        joined = " ".join(str(v) for v in frame.iloc[i].tolist())
+        match = re.search(r"(20\d{2})\s*年\s*(1[0-2]|[1-9])\s*月", joined)
+        if match:
+            title = joined
+            break
+    return frame, title
+
+
+def _month_from_xls(path: Path) -> str | None:
+    _, title = _load_rmb_sheet(path)
+    match = re.search(r"(20\d{2})\s*年\s*(1[0-2]|[1-9])\s*月", title)
+    return f"{match.group(1)}-{int(match.group(2)):02d}" if match else None
+
+
+def parse_cn_xls(path: Path) -> dict[str, tuple[str, float, float, float]]:
+    """解析海关月报 XLS 人民币值表：商品名按关键词匹配，取当月/累计/累计同比金额。
+
+    版式自适应（1月单月版无累计列：累计取当月、累计同比取当月同比）；
+    单位固定「万元人民币」，÷1万 转亿元与本地库一致。
+    """
+    frame, title = _load_rmb_sheet(path)
+    if "万美元" in title:
+        raise CustomsError(f"{path.name} 是美元值表；请使用人民币值表")
+
+    header_row = None
+    for i in range(len(frame)):
+        if any("商品名称" in str(v) for v in frame.iloc[i].tolist()):
+            header_row = i
+            break
+    if header_row is None or header_row + 1 >= len(frame):
+        raise CustomsError(f"{path.name} 未找到「商品名称」表头行（可能是反爬挑战页或格式变化）")
+    main = frame.iloc[header_row].tolist()
+    sub = frame.iloc[header_row + 1].tolist()
+
+    # 合并单元格：主表头向右沿用最近非空文本
+    segments, last = [], ""
+    for value in main:
+        text = str(value).strip()
+        if text and text != "nan":
+            last = text
+        segments.append(last)
+    name_col = next((j for j, v in enumerate(main) if "商品名称" in str(v)), 1)
+
+    month_col = cum_col = cum_yoy_col = None
+    for j, cell in enumerate(sub):
+        if str(cell).strip() != "金额":
+            continue
+        segment = segments[j]
+        if re.search(r"\d{1,2}\s*月\s*$", segment) and month_col is None:
+            month_col = j
+        elif "累计比去年同期" in segment or ("累计" in segment and "%" in segment):
+            cum_yoy_col = j
+        elif "累计" in segment and cum_col is None:
+            cum_col = j
+    has_cum = cum_col is not None
+
+    def num(value) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        return _numeric(str(value))
+
+    matched: dict[str, tuple[str, float, float, float]] = {}
+    for i in range(header_row + 2, len(frame)):
+        row = frame.iloc[i].tolist()
+        if len(row) <= name_col:
+            continue
+        name = str(row[name_col]).strip()
+        if name in {"", "nan"} or name.startswith("注"):
+            continue
+        needed = max(c for c in (month_col, cum_col, cum_yoy_col) if c is not None)
+        if len(row) <= needed:
+            continue
+        for cn_name, (keywords, excludes) in CN_MATCH_RULES.items():
+            if cn_name in matched:
+                continue
+            if any(kw in name for kw in keywords) and not any(ex in name for ex in excludes):
+                matched[cn_name] = (
+                    name,
+                    num(row[month_col]) / 10000.0,
+                    num(row[cum_col]) / 10000.0 if has_cum else num(row[month_col]) / 10000.0,
+                    num(row[cum_yoy_col]) if has_cum else num(row[month_col + 1]),
+                )
+                break
+    return matched
 
 
 def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
@@ -113,9 +214,9 @@ def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
 
 
 def import_dir(directory: Path, apply: bool, path: str | Path | None = None) -> None:
-    files = sorted(directory.glob("*.htm*")) if directory.exists() else []
+    files = sorted(directory.glob("*.htm*")) + sorted(directory.glob("*.xls*")) if directory.exists() else []
     if not files:
-        raise CustomsError(f"目录 {directory} 中没有 HTML 文件。请先把各期文章页另存到该目录。")
+        raise CustomsError(f"目录 {directory} 中没有 HTML/XLS 文件。请先把各期文章页或 XLS 表放入该目录。")
 
     fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     records: list[dict[str, object]] = []
@@ -125,7 +226,10 @@ def import_dir(directory: Path, apply: bool, path: str | Path | None = None) -> 
         if not month:
             skipped.append(f"{file.name}（无法识别月份）")
             continue
-        matched = parse_cn_table(file.read_text(encoding="utf-8", errors="ignore"))
+        if file.suffix.lower() in {".xls", ".xlsx"}:
+            matched = parse_cn_xls(file)
+        else:
+            matched = parse_cn_table(file.read_text(encoding="utf-8", errors="ignore"))
         missing = [cn for cn, _ in CUSTOMS_EXPORT_ITEMS if cn not in matched]
         if len(matched) < len(CUSTOMS_EXPORT_ITEMS):
             skipped.append(f"{file.name}（{month}，缺 {len(missing)} 项：{'/'.join(missing)}）")
