@@ -33,6 +33,7 @@ import requests
 
 from customs_provider import (
     CUSTOMS_EXPORT_ITEMS,
+    DEFAULT_CUSTOMS_PATH,
     CustomsError,
     _HEADERS,
     _numeric,
@@ -244,12 +245,12 @@ def backfill(cookie: str, apply: bool, path: str | Path | None = None, user_agen
     if apply:
         import pandas as pd
 
-        frame = load_customs(path)
+        frame = load_customs(path or DEFAULT_CUSTOMS_PATH)
         before_rows, before_min, before_max = len(frame), frame["month"].min(), frame["month"].max()
-        backup = Path(path or __import__("customs_provider", fromlist=["DEFAULT_CUSTOMS_PATH"]).DEFAULT_CUSTOMS_PATH)
+        backup = Path(path or DEFAULT_CUSTOMS_PATH)
         shutil.copy2(backup, backup.with_suffix(".csv.bak"))
         merged = merge_customs(frame, pd.DataFrame(records))
-        save_customs(merged, path)
+        save_customs(merged, path or DEFAULT_CUSTOMS_PATH)
         print(f"已写入：{before_rows} 行（{before_min}~{before_max}）→ {len(merged)} 行（{merged['month'].min()}~{merged['month'].max()}）")
         print(f"原数据备份于 {backup.with_suffix('.csv.bak')}")
     else:

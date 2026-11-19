@@ -26,6 +26,7 @@ import pandas as pd
 from backfill_customs_cn import CN_MATCH_RULES
 from customs_provider import (
     CUSTOMS_EXPORT_ITEMS,
+    DEFAULT_CUSTOMS_PATH,
     CustomsError,
     _numeric,
     _strip_html,
@@ -152,11 +153,11 @@ def import_dir(directory: Path, apply: bool, path: str | Path | None = None) -> 
     months = sorted({str(r["month"]) for r in records})
     print(f"共 {len(records)} 条记录、{len(months)} 期：{months[0]} ~ {months[-1]}")
     if apply:
-        frame = load_customs(path)
-        target = Path(path) if path else Path(__import__("customs_provider", fromlist=["DEFAULT_CUSTOMS_PATH"]).DEFAULT_CUSTOMS_PATH)
+        frame = load_customs(path or DEFAULT_CUSTOMS_PATH)
+        target = Path(path or DEFAULT_CUSTOMS_PATH)
         shutil.copy2(target, target.with_suffix(".csv.bak"))
         merged = merge_customs(frame, pd.DataFrame(records))
-        save_customs(merged, path)
+        save_customs(merged, path or DEFAULT_CUSTOMS_PATH)
         print(f"已写入：{len(frame)} 行（{frame['month'].min()}~{frame['month'].max()}）→ {len(merged)} 行"
               f"（{merged['month'].min()}~{merged['month'].max()}）")
         print(f"原数据备份于 {target.with_suffix('.csv.bak')}")
