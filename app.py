@@ -438,6 +438,9 @@ if not st.session_state.get("disclaimer_agreed"):
     _require_disclaimer()
     st.stop()
 
+# ---- 功能开关：宏观风险投票板块暂时隐藏（改为 True 恢复显示） ----
+SHOW_MACRO_VOTE = False
+
 # ---- 显示模式：录屏演示时隐藏证券代码并把公司名称替换为示例企业，防止录屏视频违规 ----
 DISPLAY_MODE_FILE = Path(__file__).resolve().parent / "data" / "display_mode.json"
 DISPLAY_MODE_LABELS = {
@@ -1872,10 +1875,10 @@ with risk_tab:
             tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ema60:Q", title="60日EMA", format=",.1f")],
         )
         ema_note_frame = window.iloc[[-1]][["date", "ema60"]].copy()
-        ema_note_frame["文字"] = "← 60日EMA"
+        ema_note_frame["文字"] = "60日EMA →"
         ema_note = (
             alt.Chart(ema_note_frame)
-            .mark_text(dx=6, align="left", fontSize=12, fontWeight=600, color="#c98a1c")
+            .mark_text(dx=-8, dy=-10, align="right", fontSize=12, fontWeight=600, color="#c98a1c")
             .encode(
                 x=alt.X("date:T", axis=alt.Axis(labels=False, ticks=False, domain=False)),
                 y=alt.Y("ema60:Q", scale=alt.Scale(zero=False), axis=None),
@@ -1910,54 +1913,55 @@ with risk_tab:
 
         st.divider()
 
-        # ---- 宏观风险投票（红柱，全局共享分值） ----
-        st.markdown("##### 宏观风险投票")
         macro_session = st.session_state.setdefault("macro_session_id", new_session_id())
-        vote_values = load_votes()
-        vote_frame = pd.DataFrame(
-            {
-                "风险项": list(vote_values),
-                "分值": list(vote_values.values()),
-                "标签": [f"{item}，{value:.1f}分" for item, value in vote_values.items()],
-            }
-        )
-        vote_base = alt.Chart(vote_frame).encode(
-            x=alt.X(
-                "风险项:N",
-                sort=list(DEFAULT_RISK_VALUES),
-                title=None,
-                axis=alt.Axis(labels=False, ticks=False),
-            ),
-        )
-        vote_bar = vote_base.mark_bar(color="#e05a4e", size=48).encode(
-            y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
-            tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
-        )
-        vote_label = vote_base.mark_text(dy=-8, color="#a03a30", fontSize=13, fontWeight=600).encode(
-            y=alt.Y("分值:Q"),
-            text=alt.Text("标签:N"),
-        )
-        vote_chart = (
-            (vote_bar + vote_label)
-            .properties(width="container", height=320)
-            .configure_view(stroke=None)
-        )
-        st.altair_chart(vote_chart, width="stretch")
-        icon_cols = st.columns(4)
-        for slot, item in zip(icon_cols, vote_values):
-            _, up_col, name_col, down_col, _ = slot.columns(
-                [0.85, 0.5, 1.1, 0.5, 0.85], gap="small"
+        if SHOW_MACRO_VOTE:
+            # ---- 宏观风险投票（红柱，全局共享分值；暂隐藏，SHOW_MACRO_VOTE=True 恢复） ----
+            st.markdown("##### 宏观风险投票")
+            vote_values = load_votes()
+            vote_frame = pd.DataFrame(
+                {
+                    "风险项": list(vote_values),
+                    "分值": list(vote_values.values()),
+                    "标签": [f"{item}，{value:.1f}分" for item, value in vote_values.items()],
+                }
             )
-            if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
-                vote_risk(item, True, macro_session)
-                st.rerun()
-            name_col.markdown(
-                f"<div style='text-align:center;white-space:nowrap;font-size:0.92rem;font-weight:600;padding-top:6px'>{item}</div>",
-                unsafe_allow_html=True,
+            vote_base = alt.Chart(vote_frame).encode(
+                x=alt.X(
+                    "风险项:N",
+                    sort=list(DEFAULT_RISK_VALUES),
+                    title=None,
+                    axis=alt.Axis(labels=False, ticks=False),
+                ),
             )
-            if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
-                vote_risk(item, False, macro_session)
-                st.rerun()
+            vote_bar = vote_base.mark_bar(color="#e05a4e", size=48).encode(
+                y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
+                tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
+            )
+            vote_label = vote_base.mark_text(dy=-8, color="#a03a30", fontSize=13, fontWeight=600).encode(
+                y=alt.Y("分值:Q"),
+                text=alt.Text("标签:N"),
+            )
+            vote_chart = (
+                (vote_bar + vote_label)
+                .properties(width="container", height=320)
+                .configure_view(stroke=None)
+            )
+            st.altair_chart(vote_chart, width="stretch")
+            icon_cols = st.columns(4)
+            for slot, item in zip(icon_cols, vote_values):
+                _, up_col, name_col, down_col, _ = slot.columns(
+                    [0.85, 0.5, 1.1, 0.5, 0.85], gap="small"
+                )
+                if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
+                    vote_risk(item, True, macro_session)
+                    st.rerun()
+                name_col.markdown(
+                    f"<div style='text-align:center;white-space:nowrap;font-size:0.92rem;font-weight:600;padding-top:6px'>{item}</div>",
+                    unsafe_allow_html=True,
+                )
+                if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
+                    vote_risk(item, False, macro_session)
+                    st.rerun()
 
         st.divider()
 
