@@ -1788,7 +1788,15 @@ with risk_tab:
                 "x0:Q",
                 title=None,
                 scale=alt.Scale(domain=[-100, 100]),
-                axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
+                axis=alt.Axis(
+                    values=[-100, -60, -20, 0, 20, 60, 100],
+                    labelFontSize=12,
+                    labelFontWeight="bold",
+                    labelExpr=(
+                        "datum.value === -60 ? '熊市' : datum.value === 0 ? '震荡市' : "
+                        "datum.value === 60 ? '牛市' : string(datum.value)"
+                    ),
+                ),
             ),
         )
         pick = alt.selection_point(encodings=["x"], nearest=True, name="pick_cursor")
