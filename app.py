@@ -83,6 +83,7 @@ from prosperity import (
     prosperity_history,
     top_companies_for_industry_ids,
 )
+from admin_auth import verify_admin_key
 from prosperity_mapping import mapped_industry_ids
 from ranking import MODEL_SPECS, model_weight_table, prepare_growth_metrics, score_snapshot, select_snapshot
 from sw_constituents import SNAPSHOT_DATE, constituents_for, industry_coverage
@@ -702,21 +703,45 @@ st.markdown(_wechat_qr_overlay_html(), unsafe_allow_html=True)
 
 with st.sidebar:
 
+    # ---- 管理员登录：数据更新、上传、演示模式等操作仅管理员可见可用 ----
+    st.subheader("管理员")
+    is_admin = bool(st.session_state.get("is_admin", False))
+    if is_admin:
+        st.success("管理员已登录。")
+        if st.button("退出管理员", key="admin_logout", width="stretch"):
+            st.session_state["is_admin"] = False
+            st.rerun()
+    else:
+        admin_key_input = st.text_input("管理员密钥", type="password", key="admin_key_input")
+        if st.button("管理员登录", key="admin_login", width="stretch", type="primary"):
+            if verify_admin_key(admin_key_input):
+                st.session_state["is_admin"] = True
+                st.rerun()
+            else:
+                st.error("密钥不正确。")
+        st.caption(
+            "上传数据、更新命令、显示模式、各数据源更新与权重设置仅管理员可用，登录后显示。"
+        )
+
     st.header("数据与参数")
-    # 显示模式：录屏/演示时隐藏公司身份信息，防止视频违规
-    st.radio(
-        "显示模式",
-        list(DISPLAY_MODE_LABELS.values()),
-        key="display_mode_label",
-        on_change=lambda: _persist_display_mode(
-            LABEL_TO_MODE[st.session_state["display_mode_label"]]
-        ),
-        help=(
-            "录屏防违规：演示模式会隐藏证券代码，并把公司名称替换为示例企业，"
-            "公告原文链接一并隐藏；设置自动保存，刷新后仍生效。"
-        ),
-    )
-    uploaded = st.file_uploader("上传万得季度数据", type=["csv", "xlsx", "xlsm"])
+    # 显示模式：录屏/演示时隐藏公司身份信息，防止视频违规（仅管理员）
+    if is_admin:
+        st.radio(
+            "显示模式",
+            list(DISPLAY_MODE_LABELS.values()),
+            key="display_mode_label",
+            on_change=lambda: _persist_display_mode(
+                LABEL_TO_MODE[st.session_state["display_mode_label"]]
+            ),
+            help=(
+                "录屏防违规：演示模式会隐藏证券代码，并把公司名称替换为示例企业，"
+                "公告原文链接一并隐藏；设置自动保存，刷新后仍生效。"
+            ),
+        )
+    if is_admin:
+        uploaded = st.file_uploader("上传万得季度数据", type=["csv", "xlsx", "xlsm"])
+    else:
+        uploaded = None
     st.download_button(
         "下载数据模板",
         data=template_to_excel_bytes(),
@@ -751,12 +776,16 @@ with st.sidebar:
     )
     if catalog.empty:
         st.warning("尚未固化行业目录。")
-    update_command = st.text_input(
-        "更新命令",
-        placeholder="更新知名公司 截止 2026-10-31",
-        help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
-    )
-    run_update = st.button("执行更新命令", width="stretch", type="primary")
+    if is_admin:
+        update_command = st.text_input(
+            "更新命令",
+            placeholder="更新知名公司 截止 2026-10-31",
+            help="支持更新知名公司、更新全部公司、更新公司 600000.SH、更新行业景气度",
+        )
+        run_update = st.button("执行更新命令", width="stretch", type="primary")
+    else:
+        update_command = ""
+        run_update = False
 
 if run_update:
     try:
@@ -1707,7 +1736,7 @@ def render_stat_industry_block(
                 width="stretch",
                 hide_index=True,
             )
-            if st.button(
+            if is_admin and st.button(
                 f"拉取「{selected_name}」全部成分公司近一年财报",
                 key=f"sync_{key_suffix}_{selected_id}",
                 type="primary",
@@ -2219,31 +2248,37 @@ with customs_tab:
     customs_frame = load_customs()
     customs_cols = st.columns([1, 2, 1])
     with customs_cols[0]:
-        if st.button(
-            "从海关总署更新",
-            key="customs_update",
-            use_container_width=True,
-            type="primary",
-        ):
-            with st.spinner("正在抓取海关月度公报……"):
+        if is_admin:
+            if st.button(
+                "从海关总署更新",
+                key="customs_update",
+                use_container_width=True,
+                type="primary",
+            ):
+                with st.spinner("正在抓取海关月度公报……"):
+                    try:
+                        customs_frame = update_customs(months=13)
+                        latest_month = customs_frame["month"].max()
+                        st.success(f"已更新至 {latest_month}，共 {len(customs_frame)} 行。")
+                    except CustomsError as exc:
+                        st.warning(f"自动抓取失败：{exc}")
+        else:
+            st.caption("更新需管理员登录。")
+    if is_admin:
+        with customs_cols[2]:
+            customs_upload = st.file_uploader(
+                "上传量值表文章 HTML（兜底）", type=("html", "htm"), key="customs_upload"
+            )
+            if customs_upload is not None:
                 try:
-                    customs_frame = update_customs(months=13)
-                    latest_month = customs_frame["month"].max()
-                    st.success(f"已更新至 {latest_month}，共 {len(customs_frame)} 行。")
-                except CustomsError as exc:
-                    st.warning(f"自动抓取失败：{exc}")
-    with customs_cols[2]:
-        customs_upload = st.file_uploader(
-            "上传量值表文章 HTML（兜底）", type=("html", "htm"), key="customs_upload"
-        )
-        if customs_upload is not None:
-            try:
-                customs_frame = import_customs_article(
-                    customs_upload.getvalue().decode("utf-8", errors="ignore")
-                )
-                st.success("已导入上传文件。")
-            except (CustomsError, UnicodeDecodeError) as exc:
-                st.error(f"导入失败：{exc}")
+                    customs_frame = import_customs_article(
+                        customs_upload.getvalue().decode("utf-8", errors="ignore")
+                    )
+                    st.success("已导入上传文件。")
+                except (CustomsError, UnicodeDecodeError) as exc:
+                    st.error(f"导入失败：{exc}")
+    else:
+        customs_upload = None
     if customs_frame.empty:
         st.info("暂无海关数据：点击「从海关总署更新」抓取，或上传文章页 HTML 导入。")
     else:
@@ -2356,7 +2391,7 @@ with liquidity_tab:
         "社融存量与存量同比从央行「调查统计司-统计数据-社会融资规模」年度栏目自动解析，"
         "与央行公众号月度报告同源。"
     )
-    if st.button(
+    if is_admin and st.button(
         "从公开数据源更新流动性数据",
         width="content",
         key="liquidity_update",
@@ -2383,37 +2418,40 @@ with liquidity_tab:
         st.info("本地还没有流动性数据。点击上方按钮联网更新（含央行社融存量与同比）。")
         st.caption(MANUAL_IMPORT_NOTE)
     else:
-        # ---- 自定义权重：滑块初值 = 持久化文件或默认值；改动即写盘，全部默认时清文件 ----
+        # ---- 自定义权重：滑块初值 = 持久化文件或默认值；改动即写盘，全部默认时清文件（仅管理员） ----
         custom_weights = _load_custom_liquidity_weights()
-        with st.container(key="liq_weight_box"):
-            with st.expander(
-                "自定义指标权重" + ("（已启用自定义）" if custom_weights else ""),
-                expanded=custom_weights is not None,
-            ):
-                st.caption(
-                    "拖动调整各指标权重（0 ~ 0.30，组内自动归一化），"
-                    "三个指数与成分表即时按新权重重算；设置自动保存到本机，刷新后仍生效。"
-                )
-                for metric_id, spec in METRICS.items():
-                    if st.session_state.get(_weight_slider_key(metric_id)) is None:
-                        st.session_state[_weight_slider_key(metric_id)] = (
-                            custom_weights or {}).get(metric_id, float(spec["weight"])
-                        )
-                    st.slider(
-                        f"{spec['label']}（{'越高越宽松' if int(spec['direction']) >= 0 else '越低越宽松'}）",
-                        min_value=0.0,
-                        max_value=LIQUIDITY_WEIGHT_SLIDER_MAX,
-                        step=0.01,
-                        key=_weight_slider_key(metric_id),
-                        on_change=_persist_weight_sliders,
+        if is_admin:
+            with st.container(key="liq_weight_box"):
+                with st.expander(
+                    "自定义指标权重" + ("（已启用自定义）" if custom_weights else ""),
+                    expanded=custom_weights is not None,
+                ):
+                    st.caption(
+                        "拖动调整各指标权重（0 ~ 0.30，组内自动归一化），"
+                        "三个指数与成分表即时按新权重重算；设置自动保存到本机，刷新后仍生效。"
                     )
-                st.button(
-                    "恢复默认权重",
-                    key="liq_w_reset",
-                    on_click=_reset_liquidity_weights,
-                    width="content",
-                    type="primary",
-                )
+                    for metric_id, spec in METRICS.items():
+                        if st.session_state.get(_weight_slider_key(metric_id)) is None:
+                            st.session_state[_weight_slider_key(metric_id)] = (
+                                custom_weights or {}).get(metric_id, float(spec["weight"])
+                            )
+                        st.slider(
+                            f"{spec['label']}（{'越高越宽松' if int(spec['direction']) >= 0 else '越低越宽松'}）",
+                            min_value=0.0,
+                            max_value=LIQUIDITY_WEIGHT_SLIDER_MAX,
+                            step=0.01,
+                            key=_weight_slider_key(metric_id),
+                            on_change=_persist_weight_sliders,
+                        )
+                    st.button(
+                        "恢复默认权重",
+                        key="liq_w_reset",
+                        on_click=_reset_liquidity_weights,
+                        width="content",
+                        type="primary",
+                    )
+        else:
+            st.caption("权重调整需管理员登录。")
         custom_weights = _load_custom_liquidity_weights() or None
         if custom_weights:
             st.info(
@@ -2775,19 +2813,23 @@ with detail_tab:
                 detail_industry_id = industry_labels[chosen_label]
                 detail_industry_name = str(member_map[detail_industry_id]["name"])
                 detail_constituents = _demo_constituents_for([detail_industry_id])
-                run_industry_sync = controls[2].button(
-                    "拉取近一年财报",
-                    type="primary",
-                    width="stretch",
-                    key=f"{key_prefix}_sync_btn",
-                    disabled=detail_constituents.empty,
-                )
-                force_resync = st.checkbox(
-                    "忽略本地缓存，强制重新联网核对",
-                    value=False,
-                    key=f"{key_prefix}_force",
-                    disabled=detail_constituents.empty,
-                )
+                if is_admin:
+                    run_industry_sync = controls[2].button(
+                        "拉取近一年财报",
+                        type="primary",
+                        width="stretch",
+                        key=f"{key_prefix}_sync_btn",
+                        disabled=detail_constituents.empty,
+                    )
+                    force_resync = st.checkbox(
+                        "忽略本地缓存，强制重新联网核对",
+                        value=False,
+                        key=f"{key_prefix}_force",
+                        disabled=detail_constituents.empty,
+                    )
+                else:
+                    run_industry_sync = False
+                    force_resync = False
                 if detail_constituents.empty:
                     st.caption(
                         f"「{detail_industry_name}」还没有成分公司快照，暂时无法按公司拉取财报；"
@@ -2983,45 +3025,46 @@ with detail_tab:
                 ) or ["general"]
                 tab_weight_store = _load_model_weights()
                 tab_override = tab_weight_store.get(sector_title) or {}
-                with st.container(key=f"mw_box_{tab_index}"):
-                    with st.expander(
-                        "自定义评分权重" + ("（本页已启用自定义）" if tab_override else ""),
-                        expanded=bool(tab_override),
-                        icon=":material/tune:",
-                    ):
-                        st.caption(
-                            "调整本页公司排名的指标权重，各模型内自动归一到 100%；改动即时重算本页"
-                            "「重点子行业」与「对应统计局大类」的综合得分与名次，不影响其它 tab。"
-                            "设置自动保存到本机。"
-                        )
-                        for model in tab_model_names:
-                            st.markdown(f"**{MODEL_SPECS[model].label}**")
-                            for metric, (default_weight, higher_is_better) in MODEL_SPECS[
-                                model
-                            ].metrics.items():
-                                key = _model_weight_key(sector_title, model, metric)
-                                if st.session_state.get(key) is None:
-                                    st.session_state[key] = float(
-                                        (tab_override.get(model) or {}).get(metric, default_weight)
+                if is_admin:
+                    with st.container(key=f"mw_box_{tab_index}"):
+                        with st.expander(
+                            "自定义评分权重" + ("（本页已启用自定义）" if tab_override else ""),
+                            expanded=bool(tab_override),
+                            icon=":material/tune:",
+                        ):
+                            st.caption(
+                                "调整本页公司排名的指标权重，各模型内自动归一到 100%；改动即时重算本页"
+                                "「重点子行业」与「对应统计局大类」的综合得分与名次，不影响其它 tab。"
+                                "设置自动保存到本机。"
+                            )
+                            for model in tab_model_names:
+                                st.markdown(f"**{MODEL_SPECS[model].label}**")
+                                for metric, (default_weight, higher_is_better) in MODEL_SPECS[
+                                    model
+                                ].metrics.items():
+                                    key = _model_weight_key(sector_title, model, metric)
+                                    if st.session_state.get(key) is None:
+                                        st.session_state[key] = float(
+                                            (tab_override.get(model) or {}).get(metric, default_weight)
+                                        )
+                                    st.slider(
+                                        f"{MODEL_METRIC_LABELS.get(metric, metric)}"
+                                        f"（{'越高越好' if higher_is_better else '越低越好'}）",
+                                        min_value=0.0,
+                                        max_value=MODEL_WEIGHT_SLIDER_MAX,
+                                        step=0.01,
+                                        key=key,
+                                        on_change=_save_tab_model_weights,
+                                        args=(sector_title, model),
                                     )
-                                st.slider(
-                                    f"{MODEL_METRIC_LABELS.get(metric, metric)}"
-                                    f"（{'越高越好' if higher_is_better else '越低越好'}）",
-                                    min_value=0.0,
-                                    max_value=MODEL_WEIGHT_SLIDER_MAX,
-                                    step=0.01,
-                                    key=key,
-                                    on_change=_save_tab_model_weights,
-                                    args=(sector_title, model),
-                                )
-                    st.button(
-                        "恢复本页默认权重",
-                        key=f"mw_reset_{sector_title}",
-                        on_click=_reset_tab_model_weights,
-                        args=(sector_title, tab_model_names),
-                        width="content",
-                        type="primary",
-                    )
+                        st.button(
+                            "恢复本页默认权重",
+                            key=f"mw_reset_{sector_title}",
+                            on_click=_reset_tab_model_weights,
+                            args=(sector_title, tab_model_names),
+                            width="content",
+                            type="primary",
+                        )
                 tab_override = _load_model_weights().get(sector_title) or {}
                 if tab_override:
                     st.info(
@@ -3167,7 +3210,7 @@ with detail_tab:
                 if tab_focus_ids:
                     focus_header = st.columns([3, 1.2])
                     focus_header[0].markdown("**重点子行业（已预拉取财报）**")
-                    if focus_header[1].button(
+                    if is_admin and focus_header[1].button(
                         "刷新最新财报",
                         width="stretch",
                         key=f"focus_refresh_{sector_title}",

@@ -49,3 +49,6 @@ output/
 .DS_Store
 Thumbs.db
 
+
+# 管理员密钥（本地生成，勿提交）
+data/admin_secret.txt
