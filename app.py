@@ -1743,7 +1743,10 @@ with risk_tab:
             pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.3, 0.3, 0.3]})
         )
         .mark_text(dy=0, fontSize=15, fontWeight=600, color="#000000")
-        .encode(x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.Y("note_y:Q", axis=None))
+        .encode(
+            x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])),
+            y=alt.Y("note_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+        )
     )
     regime_cursor = (
         alt.Chart(pd.DataFrame({"游标": [regime_value]}))
@@ -1751,9 +1754,12 @@ with risk_tab:
         .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])))
     )
     regime_label = (
-        alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"]}))
+        alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"], "label_y": [1.92]}))
         .mark_text(dy=-6, fontSize=13, fontWeight=700, color="#1f2937")
-        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.datum(1.92))
+        .encode(
+            x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])),
+            y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+        )
     )
     st.altair_chart(
         (regime_ruler + regime_notes + regime_cursor + regime_label).properties(width="container", height=150),
@@ -1864,8 +1870,19 @@ with risk_tab:
             y=alt.Y("ema60:Q", scale=alt.Scale(zero=False)),
             tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ema60:Q", title="60日EMA", format=",.1f")],
         )
+        ema_note_frame = window.iloc[[-1]][["date", "ema60"]].copy()
+        ema_note_frame["文字"] = "← 60日EMA"
+        ema_note = (
+            alt.Chart(ema_note_frame)
+            .mark_text(dx=6, align="left", fontSize=12, fontWeight=600, color="#c98a1c")
+            .encode(
+                x=alt.X("date:T", axis=alt.Axis(labels=False, ticks=False, domain=False)),
+                y=alt.Y("ema60:Q", scale=alt.Scale(zero=False), axis=None),
+                text=alt.Text("文字:N"),
+            )
+        )
         candle_panel = (
-            (candle_range + candle_body + ema60_line)
+            (candle_range + candle_body + ema60_line + ema_note)
             .add_params(zoom)
             .properties(width="container", height=280)
         )
