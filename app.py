@@ -16,8 +16,6 @@ from financing_dividend_provider import attach_financing_dividend
 from data_io import (
     dataframe_to_excel_bytes,
     normalize_input,
-    read_uploaded_file,
-    template_to_excel_bytes,
 )
 from disclosure_pipeline import DEFAULT_DATA_PATH, load_online_financials, sync_official_reports
 from industry_catalog import load_catalog, suggest_model_type
@@ -736,15 +734,6 @@ with st.sidebar:
                 "公告原文链接一并隐藏；设置自动保存，刷新后仍生效。"
             ),
         )
-    uploaded = st.file_uploader("上传万得季度数据", type=["csv", "xlsx", "xlsm"])
-    st.download_button(
-        "下载数据模板",
-        data=template_to_excel_bytes(),
-        file_name="wind_industry_ranking_template.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        width="stretch",
-        type="primary",
-    )
     top_n = int(st.number_input("每行业观察数量", min_value=1, max_value=100, value=20, step=1))
     minimum_coverage = float(
         st.slider("最低数据完整度", min_value=0.0, max_value=1.0, value=0.60, step=0.05)
@@ -811,19 +800,15 @@ if run_update:
         st.error(f"更新失败：{exc}")
 
 try:
-    if uploaded is not None:
-        raw_data = read_uploaded_file(uploaded, uploaded.name)
-    else:
-        raw_data = load_online_financials(DEFAULT_DATA_PATH)
-        if raw_data.empty:
-            # 官方公告缓存为空时，改用三级行业财报缓存（真实公告抽取结果）
-            raw_data = load_all_industry_financials()
-        if raw_data.empty:
-            raise ValueError(
-                "本地还没有正式定期报告数据。请先在「行业详情」页签拉取近一年财报，"
-                "或上传万得季度数据。"
-            )
-        st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
+    raw_data = load_online_financials(DEFAULT_DATA_PATH)
+    if raw_data.empty:
+        # 官方公告缓存为空时，改用三级行业财报缓存（真实公告抽取结果）
+        raw_data = load_all_industry_financials()
+    if raw_data.empty:
+        raise ValueError(
+            "本地还没有正式定期报告数据。请先在「行业详情」页签拉取近一年财报。"
+        )
+    st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
 
     normalized = normalize_input(raw_data)
     if model_override != "auto":
