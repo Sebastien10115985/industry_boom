@@ -1722,7 +1722,7 @@ with risk_tab:
             color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
         else:
             color = "#c2c2c2"
-        ruler_rows.append({"x0": x0, "x1": x0 + 2, "y0": 0.35, "y1": 1.35, "色": color})
+        ruler_rows.append({"x0": x0, "x1": x0 + 2, "y0": 0.7, "y1": 1.7, "色": color})
     ruler_frame = pd.DataFrame(ruler_rows)
     regime_base = alt.Chart(ruler_frame).encode(
         x=alt.X(
@@ -1734,15 +1734,15 @@ with risk_tab:
     )
     regime_ruler = regime_base.mark_rect().encode(
         x2="x1:Q",
-        y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 1.7])),
+        y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
         y2="y1:Q",
         color=alt.Color("色:N", scale=None, legend=None),
     )
     regime_notes = (
         alt.Chart(
-            pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.12, 0.12, 0.12]})
+            pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.3, 0.3, 0.3]})
         )
-        .mark_text(dy=0, fontSize=14, fontWeight=600, color="#555555")
+        .mark_text(dy=0, fontSize=15, fontWeight=600, color="#000000")
         .encode(x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.Y("note_y:Q", axis=None))
     )
     regime_cursor = (
@@ -1753,10 +1753,10 @@ with risk_tab:
     regime_label = (
         alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"]}))
         .mark_text(dy=-6, fontSize=13, fontWeight=700, color="#1f2937")
-        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.datum(1.62))
+        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.datum(1.92))
     )
     st.altair_chart(
-        (regime_ruler + regime_notes + regime_cursor + regime_label).properties(width="container", height=140),
+        (regime_ruler + regime_notes + regime_cursor + regime_label).properties(width="container", height=150),
         width="stretch",
     )
     if is_admin:
@@ -1889,6 +1889,8 @@ with risk_tab:
             "成交额按日汇总该主力合约。数据源：中金所官网历史数据包。"
         )
 
+        st.divider()
+
         # ---- 宏观风险投票（红柱，全局共享分值） ----
         st.markdown("##### 宏观风险投票")
         macro_session = st.session_state.setdefault("macro_session_id", new_session_id())
@@ -1903,7 +1905,7 @@ with risk_tab:
         vote_base = alt.Chart(vote_frame).encode(
             x=alt.X("风险项:N", sort=list(DEFAULT_RISK_VALUES), title=None),
         )
-        vote_bar = vote_base.mark_bar(color="#e05a4e").encode(
+        vote_bar = vote_base.mark_bar(color="#e05a4e", size=48).encode(
             y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
             tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
         )
@@ -1913,13 +1915,12 @@ with risk_tab:
         )
         vote_chart = (
             (vote_bar + vote_label)
-            .properties(width="container", height=180)
+            .properties(width="container", height=320)
             .configure_view(stroke=None)
         )
         st.altair_chart(vote_chart, width="stretch")
         icon_cols = st.columns(4)
         for slot, item in zip(icon_cols, vote_values):
-            slot.markdown(f"<div style='text-align:center;font-size:0.85rem'>{item}</div>", unsafe_allow_html=True)
             up_col, down_col = slot.columns(2)
             if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
                 vote_risk(item, True, macro_session)
@@ -1927,6 +1928,8 @@ with risk_tab:
             if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
                 vote_risk(item, False, macro_session)
                 st.rerun()
+
+        st.divider()
 
         # ---- 评论板块（缓冲栈/全局栈） ----
         st.markdown("##### 评论")
