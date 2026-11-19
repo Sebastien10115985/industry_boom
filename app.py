@@ -1780,7 +1780,7 @@ with risk_tab:
                 alt.value("#3d9c5f"),
             ),
         )
-        ma60_line = base_chart.mark_line(color="#c98a1c", size=2, dash=[5, 3]).encode(
+        ma60_line = base_chart.mark_line(color="#c98a1c", size=2).encode(
             y=alt.Y("ma60:Q", scale=alt.Scale(zero=False)),
             tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ma60:Q", title="60日均线", format=",.1f")],
         )
@@ -1802,7 +1802,7 @@ with risk_tab:
         st.altair_chart(volume_chart.properties(width="container", height=110), width="stretch")
         st.caption(
             f"近 {len(window)} 个交易日（{window['date'].min():%Y-%m-%d} ~ {window['date'].max():%Y-%m-%d}），"
-            "红涨绿跌，黄色虚线为60日均线（基于全部历史计算，用于观察大趋势）；"
+            "红涨绿跌，黄色实线为60日均线（基于全部历史计算，用于观察大趋势）；"
             "成交额按日汇总该主力合约。数据源：中金所官网历史数据包。"
         )
 
