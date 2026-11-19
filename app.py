@@ -1792,6 +1792,7 @@ with risk_tab:
             ),
         )
         pick = alt.selection_point(encodings=["x"], nearest=True, name="pick_cursor")
+        uniq_colors = list(dict.fromkeys(palette))
         admin_chart = (
             admin_base.mark_rect()
             .add_params(pick)
@@ -1799,7 +1800,7 @@ with risk_tab:
                 x2="x1:Q",
                 y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
                 y2="y1:Q",
-                color=alt.Color("fill:N", scale=alt.Scale(domain=palette, range=palette), legend=None),
+                color=alt.Color("fill:N", scale=alt.Scale(domain=uniq_colors, range=uniq_colors), legend=None),
             )
             .properties(width="container", height=150)
             .configure(background="white")
@@ -1811,7 +1812,15 @@ with risk_tab:
         )
         picked = ((pick_event.selection or {}).get("pick_cursor") or []) if pick_event is not None else []
         if picked:
-            raw_x = picked[0].get("x")
+            point = picked[0] if isinstance(picked[0], dict) else {}
+            raw_x = point.get("x")
+            if raw_x is None:
+                raw_x = point.get("x0")
+            if raw_x is None:
+                for value in point.values():
+                    if isinstance(value, (int, float)):
+                        raw_x = value
+                        break
             if raw_x is not None:
                 new_value = min(100.0, max(-100.0, float(raw_x)))
                 if abs(new_value - regime_value) >= 0.5:
