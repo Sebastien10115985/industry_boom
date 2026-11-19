@@ -1921,7 +1921,12 @@ with risk_tab:
             }
         )
         vote_base = alt.Chart(vote_frame).encode(
-            x=alt.X("风险项:N", sort=list(DEFAULT_RISK_VALUES), title=None),
+            x=alt.X(
+                "风险项:N",
+                sort=list(DEFAULT_RISK_VALUES),
+                title=None,
+                axis=alt.Axis(labels=False, ticks=False),
+            ),
         )
         vote_bar = vote_base.mark_bar(color="#e05a4e", size=48).encode(
             y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
@@ -1939,10 +1944,14 @@ with risk_tab:
         st.altair_chart(vote_chart, width="stretch")
         icon_cols = st.columns(4)
         for slot, item in zip(icon_cols, vote_values):
-            up_col, down_col = slot.columns(2)
+            up_col, name_col, down_col = slot.columns([1, 1.6, 1])
             if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
                 vote_risk(item, True, macro_session)
                 st.rerun()
+            name_col.markdown(
+                f"<div style='text-align:center;font-size:0.92rem;font-weight:600;padding-top:6px'>{item}</div>",
+                unsafe_allow_html=True,
+            )
             if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
                 vote_risk(item, False, macro_session)
                 st.rerun()
