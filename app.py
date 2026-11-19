@@ -71,6 +71,7 @@ from customs_provider import (
     load_customs,
     update_customs,
 )
+from cffex_provider import CffexError, load_if_daily, update_if_daily
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1690,9 +1691,117 @@ def render_stat_industry_block(
         else:
             st.dataframe(display_frame(companies), width="stretch", hide_index=True)
 
-watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
-    ["观察库", "行业景气度", "行业详情", "海关数据", "流动性分析", "数据质量", "公告证据", "算法说明"]
+risk_tab, watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, quality_tab, evidence_tab, method_tab = st.tabs(
+    ["风险预警", "观察库", "行业景气度", "行业详情", "海关数据", "流动性分析", "数据质量", "公告证据", "算法说明"]
 )
+
+with risk_tab:
+    st.caption(
+        "沪深300股指期货（IF）主力连续日K线，来自中金所官网历史数据包（每日成交量最大的 IF 合约作为主力）。"
+    )
+    risk_cols = st.columns([3, 1])
+    with risk_cols[1]:
+        if risk_cols[1].button("从中金所更新日K线", key="risk_update"):
+            try:
+                update_if_daily(months=3)
+                st.success("已更新至最新交易日。")
+            except CffexError as exc:
+                st.error(f"更新失败：{exc}")
+    if_daily = load_if_daily()
+    if if_daily.empty:
+        st.info("本地还没有中金所日K线缓存，点击右上角按钮从中金所下载近 3 个月数据。")
+    else:
+        risk_frame = if_daily.copy()
+        risk_frame["date"] = pd.to_datetime(risk_frame["date"], format="%Y%m%d")
+        risk_frame = risk_frame.sort_values("date").reset_index(drop=True)
+        closes = risk_frame["close"]
+        latest = risk_frame.iloc[-1]
+
+        def _period_return(days: int) -> float | None:
+            if len(risk_frame) <= days:
+                return None
+            return closes.iloc[-1] / closes.iloc[-1 - days] - 1
+
+        ret5 = _period_return(5)
+        ret20 = _period_return(20)
+        daily_ret = closes.pct_change()
+        vol20_annual = daily_ret.rolling(20).std().iloc[-1] * (252 ** 0.5) if len(risk_frame) > 21 else None
+        lookback = min(60, len(risk_frame))
+        rolling_high = closes.iloc[-lookback:].max()
+        drawdown = closes.iloc[-1] / rolling_high - 1
+        down_streak = 0
+        for change in daily_ret.iloc[::-1]:
+            if change < 0:
+                down_streak += 1
+            else:
+                break
+
+        metric_cols = st.columns(5)
+        metric_cols[0].metric(
+            "最新收盘（主力）",
+            f"{latest['close']:,.1f}",
+            None if ret5 is None else f"{ret5:+.2%}",
+            help=f"合约 {latest['contract']}，日期 {latest['date']:%Y-%m-%d}",
+        )
+        metric_cols[1].metric("近5日涨跌", None if ret5 is None else f"{ret5:+.2%}")
+        metric_cols[2].metric("近20日涨跌", None if ret20 is None else f"{ret20:+.2%}")
+        metric_cols[3].metric(
+            "20日年化波动率",
+            None if vol20_annual is None else f"{vol20_annual:.1%}",
+            None if vol20_annual is None else ("偏高" if vol20_annual > 0.30 else ("中性" if vol20_annual > 0.20 else "偏低")),
+        )
+        metric_cols[4].metric(
+            f"距{lookback}日高点回撤",
+            f"{drawdown:+.2%}",
+        )
+
+        alerts = []
+        if drawdown <= -0.05:
+            alerts.append(("error", f"深度回撤：距近 {lookback} 日高点已下跌 {abs(drawdown):.1%}，注意系统性风险。"))
+        elif drawdown <= -0.03:
+            alerts.append(("warning", f"回撤提醒：距近 {lookback} 日高点下跌 {abs(drawdown):.1%}。"))
+        if vol20_annual is not None and vol20_annual > 0.30:
+            alerts.append(("warning", f"波动放大：20日年化波动率 {vol20_annual:.1%}，市场情绪剧烈。"))
+        if down_streak >= 3:
+            alerts.append(("warning", f"连续下跌：主力连续 {down_streak} 个交易日收跌。"))
+        if not alerts:
+            st.success("风险指标平稳：未触发回撤、波动与连跌预警。")
+        else:
+            for level, message in alerts:
+                (st.error if level == "error" else st.warning)(message)
+
+        window = risk_frame.iloc[-60:]
+        base_chart = alt.Chart(window).encode(x=alt.X("date:T", title=None))
+        candle_range = base_chart.mark_bar(size=8).encode(
+            y=alt.Y("low:Q", title=None, scale=alt.Scale(zero=False)),
+            y2="high:Q",
+        )
+        candle_body = base_chart.mark_bar(size=4).encode(
+            y=alt.Y("open:Q", scale=alt.Scale(zero=False)),
+            y2="close:Q",
+            color=alt.condition(
+                alt.datum.close >= alt.datum.open,
+                alt.value("#e05a4e"),
+                alt.value("#3d9c5f"),
+            ),
+        )
+        volume_chart = base_chart.mark_bar(color="#9fb3c8").encode(
+            y=alt.Y("volume:Q", title="成交量(手)"),
+            tooltip=[
+                alt.Tooltip("date:T", title="日期"),
+                alt.Tooltip("contract:N", title="主力合约"),
+                alt.Tooltip("open:Q", title="开盘", format=","),
+                alt.Tooltip("close:Q", title="收盘", format=","),
+                alt.Tooltip("volume:Q", title="成交量", format=","),
+                alt.Tooltip("turnover_yi:Q", title="成交额(亿)", format=",.1f"),
+            ],
+        )
+        st.altair_chart((candle_range + candle_body).properties(width="container", height=260), width="stretch")
+        st.altair_chart(volume_chart.properties(width="container", height=110), width="stretch")
+        st.caption(
+            f"近 {len(window)} 个交易日（{window['date'].min():%Y-%m-%d} ~ {window['date'].max():%Y-%m-%d}），"
+            "红涨绿跌；成交额按日汇总该主力合约。数据源：中金所官网历史数据包。"
+        )
 
 with watch_tab:
     industries = sorted(watchlist["industry_l3_name"].dropna().astype(str).unique())
