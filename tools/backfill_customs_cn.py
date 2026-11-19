@@ -210,7 +210,7 @@ def backfill(cookie: str, apply: bool, path: str | Path | None = None, user_agen
             print(f"  跳过 {month}：{exc}")
             continue
         short = {name: f"{v[1]:.0f}/{v[2]:.0f}/{v[3]:.1f}" for name, v in matched.items()}
-        missing = [cn for cn, _, _ in CUSTOMS_EXPORT_ITEMS if cn not in matched]
+        missing = [cn for cn, _ in CUSTOMS_EXPORT_ITEMS if cn not in matched]
         status = "OK " if not missing else f"缺{len(missing)}项:{'/'.join(missing)}"
         print(f"  {month} [{status}] 样例：稀土={short.get('稀土')} 汽车={short.get('汽车')}")
         if len(matched) < len(CUSTOMS_EXPORT_ITEMS) and apply:

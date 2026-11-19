@@ -38,14 +38,14 @@ BACKFILL_DIR = Path(__file__).resolve().parent.parent / "data" / "customs_html_b
 
 
 def month_from_file(path: Path) -> str | None:
-    """文件名或内容标题解析统计月份（YYYY-MM）。"""
-    stem = path.stem
-    match = re.search(r"(20\d{2})[-_.]?(1[0-2]|[1-9])", stem)
+    """从内容标题解析统计月份（YYYY-MM）；文件名是发布时间不可靠，仅作兜底。"""
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    title_match = re.search(r"<title>(.*?)</title>", text, re.S | re.I)
+    title = _strip_html(title_match.group(1)) if title_match else ""
+    match = re.search(r"(20\d{2})\s*年\s*(1[0-2]|[1-9])\s*月", title + " " + text[:3000])
     if match:
         return f"{match.group(1)}-{int(match.group(2)):02d}"
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    title = _strip_html(re.search(r"<title>(.*?)</title>", text, re.S | re.I).group(1)) if re.search(r"<title>(.*?)</title>", text, re.S | re.I) else ""
-    match = re.search(r"(20\d{2})\s*年\s*(1[0-2]|[1-9])\s*月", title + " " + text[:3000])
+    match = re.search(r"(20\d{2})[-_.]?(1[0-2]|[1-9])", path.stem)
     if match:
         return f"{match.group(1)}-{int(match.group(2)):02d}"
     return None
@@ -113,7 +113,7 @@ def import_dir(directory: Path, apply: bool, path: str | Path | None = None) -> 
             skipped.append(f"{file.name}（无法识别月份）")
             continue
         matched = parse_cn_table(file.read_text(encoding="utf-8", errors="ignore"))
-        missing = [cn for cn, _, _ in CUSTOMS_EXPORT_ITEMS if cn not in matched]
+        missing = [cn for cn, _ in CUSTOMS_EXPORT_ITEMS if cn not in matched]
         if len(matched) < len(CUSTOMS_EXPORT_ITEMS):
             skipped.append(f"{file.name}（{month}，缺 {len(missing)} 项：{'/'.join(missing)}）")
             continue
