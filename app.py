@@ -1705,6 +1705,70 @@ with risk_tab:
     st.caption(
         "沪深300股指期货（IF）主力连续日K线，来自中金所官网历史数据包（每日成交量最大的 IF 合约作为主力）。"
     )
+
+    # ---- 市场状态游标卡尺（管理员可设当前值） ----
+    def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
+        return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
+
+    regime_value = load_regime()
+    ruler_rows = []
+    for x0 in range(-100, 100, 2):
+        mid = x0 + 1
+        if mid <= -20:
+            t = min(1.0, max(0.0, (-20 - mid) / 80))
+            color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
+        elif mid >= 20:
+            t = min(1.0, max(0.0, (mid - 20) / 80))
+            color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
+        else:
+            color = "#c2c2c2"
+        ruler_rows.append({"x0": x0, "x1": x0 + 2, "y0": 0.35, "y1": 1.35, "色": color})
+    ruler_frame = pd.DataFrame(ruler_rows)
+    regime_base = alt.Chart(ruler_frame).encode(
+        x=alt.X(
+            "x0:Q",
+            title=None,
+            scale=alt.Scale(domain=[-100, 100]),
+            axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
+        ),
+    )
+    regime_ruler = regime_base.mark_rect().encode(
+        x2="x1:Q",
+        y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 1.7])),
+        y2="y1:Q",
+        color=alt.Color("色:N", scale=None, legend=None),
+    )
+    regime_notes = (
+        alt.Chart(
+            pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.12, 0.12, 0.12]})
+        )
+        .mark_text(dy=0, fontSize=14, fontWeight=600, color="#555555")
+        .encode(x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.Y("note_y:Q", axis=None))
+    )
+    regime_cursor = (
+        alt.Chart(pd.DataFrame({"游标": [regime_value]}))
+        .mark_rule(color="#1f2937", size=3)
+        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])))
+    )
+    regime_label = (
+        alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"]}))
+        .mark_text(dy=-6, fontSize=13, fontWeight=700, color="#1f2937")
+        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])), y=alt.datum(1.62))
+    )
+    st.altair_chart(
+        (regime_ruler + regime_notes + regime_cursor + regime_label).properties(width="container", height=140),
+        width="stretch",
+    )
+    if is_admin:
+        regime_input = st.slider(
+            "设置市场状态游标", min_value=-100, max_value=100, value=int(round(regime_value)), key="regime_slider"
+        )
+        if abs(regime_input - regime_value) >= 1:
+            save_regime(regime_input, is_admin=True)
+            regime_value = float(regime_input)
+            st.rerun()
+    st.divider()
+
     risk_cols = st.columns([3, 1])
     with risk_cols[1]:
         if risk_cols[1].button("从中金所更新日K线", key="risk_update"):
@@ -1777,63 +1841,6 @@ with risk_tab:
                 (st.error if level == "error" else st.warning)(message)
 
         risk_frame["ma60"] = closes.rolling(60).mean()
-
-        # ---- 市场状态游标卡尺（IF趋势上方；管理员可设当前值） ----
-        def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
-            return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
-
-        regime_value = load_regime()
-        ruler_rows = []
-        for x0 in range(-100, 100, 2):
-            mid = x0 + 1
-            if mid <= -20:
-                t = min(1.0, max(0.0, (-20 - mid) / 80))
-                color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
-            elif mid >= 20:
-                t = min(1.0, max(0.0, (mid - 20) / 80))
-                color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
-            else:
-                color = "#c2c2c2"
-            ruler_rows.append({"x0": x0, "x1": x0 + 2, "y0": 0, "y1": 1, "色": color})
-        ruler_frame = pd.DataFrame(ruler_rows)
-        regime_base = alt.Chart(ruler_frame).encode(
-            x=alt.X(
-                "x0:Q",
-                title=None,
-                scale=alt.Scale(domain=[-100, 100]),
-                axis=alt.Axis(values=[-100, -20, 0, 20, 100], tickMinStep=30),
-            ),
-        )
-        regime_ruler = regime_base.mark_rect().encode(
-            x2="x1:Q",
-            y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 1])),
-            y2="y1:Q",
-            color=alt.Color("色:N", scale=None, legend=None),
-        )
-        regime_cursor = (
-            alt.Chart(pd.DataFrame({"游标": [regime_value]}))
-            .mark_rule(color="#1f2937", size=3)
-            .encode(x=alt.X("游标:Q"))
-        )
-        regime_label = (
-            alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"]}))
-            .mark_text(dy=-12, fontSize=13, fontWeight=700, color="#1f2937")
-            .encode(x=alt.X("游标:Q"), text=alt.Text("标签:N"))
-        )
-        st.altair_chart(
-            (regime_ruler + regime_cursor + regime_label).properties(width="container", height=80),
-            width="stretch",
-        )
-        st.caption("市场状态：左绿熊市（越左越深），中间灰震荡，右红牛市（越右越深）。")
-        if is_admin:
-            regime_input = st.slider(
-                "设置市场状态游标", min_value=-100, max_value=100, value=int(round(regime_value)), key="regime_slider"
-            )
-            if abs(regime_input - regime_value) >= 1:
-                save_regime(regime_input, is_admin=True)
-                regime_value = float(regime_input)
-                st.rerun()
-
         window = risk_frame.iloc[-60:]
         base_chart = alt.Chart(window).encode(x=alt.X("date:T", title=None))
         candle_range = base_chart.mark_bar(size=8).encode(
