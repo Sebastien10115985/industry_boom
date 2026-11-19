@@ -64,6 +64,7 @@ from liquidity_sources import (
 )
 from nbs_provider import DEFAULT_HISTORY_PATH, load_history, update_history
 from customs_provider import (
+    CUSTOMS_GROUPS,
     CustomsError,
     WIND_INDUSTRY_MAP,
     import_customs_article,
@@ -2239,15 +2240,32 @@ with customs_tab:
                 .configure_view(stroke=None)
             )
             st.altair_chart(amount_chart, width="stretch")
-        latest_customs = (
-            customs_frame[customs_frame["month"] == customs_months[-1]]
-            .sort_values("export_month_amount_yi", ascending=False)
-        )
+        latest_customs = customs_frame[customs_frame["month"] == customs_months[-1]].copy()
         latest_customs["wind_industry"] = latest_customs["commodity_cn"].map(WIND_INDUSTRY_MAP)
-        st.markdown(f"**最新一期明细（{customs_months[-1]}，按当月出口额从大到小固定排序）**")
+        # 同类相邻：组间按 CUSTOMS_GROUPS 固定顺序，组内按当月出口额从大到小
+        group_of = {
+            commodity: group_name
+            for group_name, members in CUSTOMS_GROUPS
+            for commodity in members
+        }
+        group_order = {
+            commodity: index
+            for index, (_, members) in enumerate(CUSTOMS_GROUPS)
+            for commodity in members
+        }
+        latest_customs["category"] = latest_customs["commodity_cn"].map(group_of)
+        latest_customs["_group_order"] = latest_customs["commodity_cn"].map(group_order)
+        latest_customs = latest_customs.sort_values(
+            ["_group_order", "export_month_amount_yi"],
+            ascending=[True, False],
+        )
+        st.markdown(
+            f"**最新一期明细（{customs_months[-1]}，同类相邻、组内按当月出口额从大到小）**"
+        )
         st.dataframe(
             latest_customs[
                 [
+                    "category",
                     "commodity_cn",
                     "export_month_amount_yi",
                     "export_cum_amount_yi",
@@ -2256,6 +2274,7 @@ with customs_tab:
                 ]
             ].rename(
                 columns={
+                    "category": "类别",
                     "commodity_cn": "商品",
                     "export_month_amount_yi": "当月金额（亿元）",
                     "export_cum_amount_yi": "累计金额（亿元）",
