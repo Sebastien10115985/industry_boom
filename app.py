@@ -72,6 +72,17 @@ from customs_provider import (
     update_customs,
 )
 from cffex_provider import CffexError, load_if_daily, update_if_daily
+from macro_risk import (
+    DEFAULT_RISK_VALUES,
+    add_comment,
+    delete_comment,
+    feature_comment,
+    load_comments,
+    load_voters,
+    load_votes,
+    new_session_id,
+    vote_risk,
+)
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1805,6 +1816,105 @@ with risk_tab:
             "红涨绿跌，黄色实线为60日均线（基于全部历史计算，用于观察大趋势）；"
             "成交额按日汇总该主力合约。数据源：中金所官网历史数据包。"
         )
+
+        # ---- 宏观风险投票（红柱，全局共享分值） ----
+        st.markdown("##### 宏观风险投票")
+        st.caption(
+            "四项宏观风险由全体用户共同打分（默认 80/80/80/50 分）：认同当前风险水平则分值 +0.1，"
+            "不认同则 -0.1；每人每项限投一票，分值全局实时共享。"
+        )
+        macro_session = st.session_state.setdefault("macro_session_id", new_session_id())
+        voters = load_voters()
+        vote_cols = st.columns(4)
+        for slot, (item, value) in zip(vote_cols, load_votes().items()):
+            with slot:
+                st.metric(item, f"{value:.1f}", border=True)
+                has_voted = macro_session in voters.get(item, set())
+                up_clicked = st.button("认同 +0.1", key=f"vote_up_{item}", disabled=has_voted, width="stretch")
+                down_clicked = st.button("不认同 -0.1", key=f"vote_down_{item}", disabled=has_voted, width="stretch")
+                if has_voted:
+                    st.caption("已参与")
+                elif up_clicked or down_clicked:
+                    _, ok = vote_risk(item, up_clicked, macro_session)
+                    if not ok:
+                        st.warning("你已参与该风险项投票。")
+                    else:
+                        st.rerun()
+        vote_values = load_votes()
+        vote_frame = pd.DataFrame({"风险项": list(vote_values), "分值": list(vote_values.values())})
+        vote_chart = (
+            alt.Chart(vote_frame)
+            .mark_bar(color="#e05a4e")
+            .encode(
+                x=alt.X("风险项:N", sort=list(DEFAULT_RISK_VALUES), title=None),
+                y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
+                tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
+            )
+            .properties(width="container", height=180)
+            .configure_view(stroke=None)
+        )
+        st.altair_chart(vote_chart, width="stretch")
+
+        # ---- 评论板块（缓冲栈/全局栈） ----
+        st.markdown("##### 评论")
+        client_ip = "未知"
+        try:
+            client_ip = st.context.headers.get("X-Forwarded-For", "未知") or "未知"
+        except Exception:
+            pass
+        comment_input = st.text_area("发表评论（500 字以内）", key="macro_comment_input", height=90)
+        if st.button("提交评论", key="macro_comment_submit", type="primary"):
+            try:
+                add_comment(comment_input, macro_session, client_ip)
+                st.success("已提交，等待管理员精选后公开。")
+            except ValueError as exc:
+                st.error(str(exc))
+        comments_data = load_comments()
+        if comments_data["global"]:
+            st.markdown("**精选评论**")
+            for record in comments_data["global"]:
+                posted = str(record["ts"])[:16].replace("T", " ")
+                body_cols = st.columns([12, 1])
+                body_cols[0].markdown(
+                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>网友 · {posted}</div>",
+                    unsafe_allow_html=True,
+                )
+                if is_admin and body_cols[1].button("删除", key=f"del_global_{record['id']}"):
+                    delete_comment(record["id"], macro_session, is_admin=True)
+                    st.rerun()
+        else:
+            st.caption("暂无精选评论。")
+        my_comments = [r for r in comments_data["buffer"] if r.get("session_id") == macro_session]
+        if my_comments:
+            st.markdown("**我的评论（待精选）**")
+            for record in my_comments:
+                posted = str(record["ts"])[:16].replace("T", " ")
+                my_cols = st.columns([12, 1])
+                my_cols[0].markdown(
+                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>{posted}</div>",
+                    unsafe_allow_html=True,
+                )
+                if my_cols[1].button("删除", key=f"del_mine_{record['id']}"):
+                    delete_comment(record["id"], macro_session, is_admin=False)
+                    st.rerun()
+        if is_admin and comments_data["buffer"]:
+            st.markdown(f"**管理：缓冲栈全部评论（{len(comments_data['buffer'])} 条，含 IP）**")
+            for record in comments_data["buffer"]:
+                posted = str(record["ts"])[:16].replace("T", " ")
+                admin_cols = st.columns([10, 1, 1])
+                admin_cols[0].markdown(
+                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>IP {record['ip']} · {posted}</div>",
+                    unsafe_allow_html=True,
+                )
+                if admin_cols[1].button("精选", key=f"feat_{record['id']}"):
+                    feature_comment(record["id"], is_admin=True)
+                    st.rerun()
+                if admin_cols[2].button("删除", key=f"del_admin_{record['id']}"):
+                    delete_comment(record["id"], macro_session, is_admin=True)
+                    st.rerun()
 
 with watch_tab:
     st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
