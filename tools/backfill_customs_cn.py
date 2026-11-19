@@ -65,11 +65,12 @@ CN_MATCH_RULES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
-def make_session(cookie: str) -> requests.Session:
+def make_session(cookie: str, user_agent: str | None = None) -> requests.Session:
+    """瑞数 Cookie 与浏览器 User-Agent 绑定，UA 必须与取 Cookie 的浏览器一致。"""
     session = requests.Session()
     session.headers.update({
         **_HEADERS,
-        "User-Agent": (
+        "User-Agent": user_agent or (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         ),
@@ -83,6 +84,12 @@ def make_session(cookie: str) -> requests.Session:
 
 def get_text(session: requests.Session, url: str) -> str:
     resp = session.get(url, timeout=60)
+    if resp.status_code == 412:
+        raise CustomsError(
+            f"412（Cookie 失效、过期或 User-Agent 不匹配）：{url}\n"
+            "请重新取 Cookie，并用 --ua 传入与浏览器完全一致的 User-Agent"
+            "（浏览器 F12 Console 执行 navigator.userAgent 复制输出）。"
+        )
     if resp.status_code != 200:
         raise CustomsError(f"返回 {resp.status_code}：{url}")
     resp.encoding = resp.apparent_encoding or "utf-8"
@@ -90,11 +97,6 @@ def get_text(session: requests.Session, url: str) -> str:
     if len(text) < 2500 or "$_ts" in text[:4000]:
         raise CustomsError(f"Cookie 失效或被 WAF 拦截：{url}")
     return text
-
-
-def find_report_section(session: requests.Session) -> str:
-    """从首页导航找「海关统计月报」栏目地址。"""
-    home = get_text(session, HOME)
     for text_hint in ("统计月报", "统计快讯", "统计"):
         pattern = re.compile(
             r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>[^<]*" + text_hint + r"[^<]*</a>", re.I
@@ -181,8 +183,8 @@ def parse_cn_exports(html: str, month: str) -> dict[str, tuple[str, float, float
     return matched
 
 
-def backfill(cookie: str, apply: bool, path: str | Path | None = None) -> None:
-    session = make_session(cookie)
+def backfill(cookie: str, apply: bool, path: str | Path | None = None, user_agent: str | None = None) -> None:
+    session = make_session(cookie, user_agent)
     section = find_report_section(session)
     print(f"统计栏目：{section}")
     articles = collect_article_links(session, section)
@@ -241,10 +243,11 @@ def backfill(cookie: str, apply: bool, path: str | Path | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cookie", required=True, help="浏览器中 www.customs.gov.cn 的完整 Cookie 串")
+    parser.add_argument("--ua", default=None, help="与取 Cookie 的浏览器完全一致的 User-Agent（Console 执行 navigator.userAgent）")
     parser.add_argument("--apply", action="store_true", help="实际写入（默认 dry-run 只预览）")
     parser.add_argument("--path", default=None, help="自定义 CSV 路径（默认 data/prosperity/customs_monthly.csv）")
     args = parser.parse_args()
-    backfill(args.cookie, args.apply, args.path)
+    backfill(args.cookie, args.apply, args.path, args.ua)
 
 
 if __name__ == "__main__":
