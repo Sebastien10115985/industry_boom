@@ -1775,12 +1775,14 @@ with risk_tab:
 
         cursor_cell = min(99, max(-100, int(regime_value // 1)))
         admin_rows = []
+        palette: list[str] = []
         for x0 in range(-100, 100):
             if x0 == cursor_cell:
                 color, y0v, y1v = "#1f2937", 0.05, 1.95
             else:
                 color, y0v, y1v = _ruler_color(x0 + 0.5), 0.7, 1.7
-            admin_rows.append({"x0": x0, "x1": x0 + 1, "y0": y0v, "y1": y1v, "色": color})
+            palette.append(color)
+            admin_rows.append({"x0": x0, "x1": x0 + 1, "y0": y0v, "y1": y1v, "fill": color})
         admin_base = alt.Chart(pd.DataFrame(admin_rows)).encode(
             x=alt.X(
                 "x0:Q",
@@ -1789,7 +1791,7 @@ with risk_tab:
                 axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
             ),
         )
-        pick = alt.selection_point(encodings=["x"], nearest=True, name="设置游标")
+        pick = alt.selection_point(encodings=["x"], nearest=True, name="pick_cursor")
         admin_chart = (
             admin_base.mark_rect()
             .add_params(pick)
@@ -1797,7 +1799,7 @@ with risk_tab:
                 x2="x1:Q",
                 y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
                 y2="y1:Q",
-                color=alt.Color("色:N", scale=None, legend=None),
+                color=alt.Color("fill:N", scale=alt.Scale(domain=palette, range=palette), legend=None),
             )
             .properties(width="container", height=150)
             .configure(background="white")
@@ -1807,7 +1809,7 @@ with risk_tab:
             f"管理员：点击卡尺任意位置，游标（黑柱，当前 {regime_value:.0f}）即移动到该处并全局保存。"
             "左绿熊市 / 中灰震荡 / 右红牛市。"
         )
-        picked = ((pick_event.selection or {}).get("设置游标") or []) if pick_event is not None else []
+        picked = ((pick_event.selection or {}).get("pick_cursor") or []) if pick_event is not None else []
         if picked:
             raw_x = picked[0].get("x")
             if raw_x is not None:
