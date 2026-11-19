@@ -1702,10 +1702,6 @@ risk_tab, watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, qua
 )
 
 with risk_tab:
-    st.caption(
-        "沪深300股指期货（IF）主力连续日K线，来自中金所官网历史数据包（每日成交量最大的 IF 合约作为主力）。"
-    )
-
     # ---- 市场状态游标卡尺（管理员可设当前值） ----
     def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
         return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
@@ -1746,6 +1742,7 @@ with risk_tab:
         .encode(
             x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])),
             y=alt.Y("note_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+            text=alt.Text("注释:N"),
         )
     )
     regime_cursor = (
@@ -1759,6 +1756,7 @@ with risk_tab:
         .encode(
             x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])),
             y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+            text=alt.Text("标签:N"),
         )
     )
     st.altair_chart(
@@ -1775,6 +1773,9 @@ with risk_tab:
             st.rerun()
     st.divider()
 
+    st.caption(
+        "沪深300股指期货（IF）主力连续日K线，来自中金所官网历史数据包（每日成交量最大的 IF 合约作为主力）。"
+    )
     risk_cols = st.columns([3, 1])
     with risk_cols[1]:
         if risk_cols[1].button("从中金所更新日K线", key="risk_update", type="primary"):
