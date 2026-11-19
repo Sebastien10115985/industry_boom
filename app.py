@@ -1788,15 +1788,7 @@ with risk_tab:
                 "x0:Q",
                 title=None,
                 scale=alt.Scale(domain=[-100, 100]),
-                axis=alt.Axis(
-                    values=[-100, -60, -20, 0, 20, 60, 100],
-                    labelFontSize=12,
-                    labelFontWeight="bold",
-                    labelExpr=(
-                        "datum.value === -60 ? '熊市' : datum.value === 0 ? '震荡市' : "
-                        "datum.value === 60 ? '牛市' : string(datum.value)"
-                    ),
-                ),
+                axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
             ),
         )
         pick = alt.selection_point(encodings=["x"], nearest=True, name="pick_cursor")
@@ -1814,10 +1806,20 @@ with risk_tab:
             .configure(background="white")
         )
         pick_event = st.altair_chart(admin_chart, on_select="rerun", width="stretch")
-        st.caption(
-            f"管理员：点击卡尺任意位置，游标（黑柱，当前 {regime_value:.0f}）即移动到该处并全局保存。"
-            "左绿熊市 / 中灰震荡 / 右红牛市。"
+        note_cols = st.columns(3)
+        note_cols[0].markdown(
+            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>熊市</div>",
+            unsafe_allow_html=True,
         )
+        note_cols[1].markdown(
+            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>震荡市</div>",
+            unsafe_allow_html=True,
+        )
+        note_cols[2].markdown(
+            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>牛市</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"管理员：点击卡尺任意位置，游标（黑柱，当前 {regime_value:.0f}）即移动到该处并全局保存。")
         picked = ((pick_event.selection or {}).get("pick_cursor") or []) if pick_event is not None else []
         if picked:
             point = picked[0] if isinstance(picked[0], dict) else {}
