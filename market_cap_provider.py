@@ -22,6 +22,9 @@ except ImportError:  # pragma: no cover - 依赖缺失时由调用方提示
 
 QUOTE_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get"
 QUOTE_SOURCE = "公开行情接口（东方财富 push2）"
+# 东财断连/限流时的备用源：腾讯行情（总市值单位亿元）
+TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
+QUOTE_SOURCE_TENCENT = "公开行情接口（腾讯 qt.gtimg.cn）"
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "market_cap.csv"
 DEFAULT_BATCH_SIZE = 40
 DEFAULT_MAX_AGE_DAYS = 1
@@ -86,6 +89,46 @@ def _to_number(value: object) -> float:
     return float(number) if pd.notna(number) else float("nan")
 
 
+def _tencent_prefix(market: str) -> str:
+    return {"SH": "sh", "SZ": "sz", "BJ": "bj"}.get(market, "sh")
+
+
+def _fetch_batch_tencent(company_ids: list[str]) -> list[dict[str, object]]:
+    """腾讯行情备用源：fields[45] 为总市值（亿元），fields[3] 为最新价。"""
+    if requests is None:
+        raise MarketCapError("缺少 requests，请先安装 requirements.txt")
+    pairs = [_split_code(item) for item in company_ids]
+    market_by_code = {code: market for code, market in pairs}
+    query = ",".join(f"{_tencent_prefix(market)}{code}" for code, market in pairs)
+    response = requests.get(
+        TENCENT_QUOTE_URL + query,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; IndustryResearchTool/1.0)", "Referer": "https://gu.qq.com/"},
+        timeout=20,
+    )
+    response.raise_for_status()
+    response.encoding = "gbk"
+    records: list[dict[str, object]] = []
+    for line in response.text.strip().splitlines():
+        fields = line.split("~")
+        if len(fields) < 46:
+            continue
+        code = str(fields[2] or "").strip()
+        market_cap_yi = _to_number(fields[45])
+        if not code or pd.isna(market_cap_yi) or market_cap_yi <= 0:
+            continue
+        records.append(
+            {
+                "company_id": f"{code}.{market_by_code.get(code, 'SH')}",
+                "company_name": str(fields[1] or "").strip(),
+                "market_cap": market_cap_yi * 1e8,
+                "price": _to_number(fields[3]),
+                "quote_date": date.today().isoformat(),
+                "source": QUOTE_SOURCE_TENCENT,
+            }
+        )
+    return records
+
+
 def fetch_market_caps(
     company_ids: list[str],
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -110,7 +153,12 @@ def fetch_market_caps(
                 if attempt < 2:
                     time.sleep(3 + attempt * 7)
         if last_error is not None:
-            raise MarketCapError(f"行情接口请求失败：{last_error}") from last_error
+            # 东财断连/限流时回退腾讯行情，仍失败才抛错
+            try:
+                records.extend(_fetch_batch_tencent(batch))
+                continue
+            except Exception as fallback_error:
+                raise MarketCapError(f"行情接口请求失败：{last_error}") from fallback_error
         for row in rows:
             code = str(row.get("f12") or "").strip()
             market = "SH" if str(row.get("f13")) == "1" else "SZ"
