@@ -732,7 +732,6 @@ with st.sidebar:
                 st.rerun()
             else:
                 st.error("密钥不正确。")
-        st.caption("显示模式（演示/正常切换）仅管理员可用，登录后显示。")
 
     st.header("数据与参数")
     # 显示模式：录屏/演示时隐藏公司身份信息，防止视频违规（仅管理员）
