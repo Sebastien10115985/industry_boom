@@ -56,6 +56,8 @@ def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
 
     列定位自适应：先找包含「当月」「累计」的表头行确定金额列位置；
     找不到表头时退回英文站同源结构（第4/6/10列）。
+    单位自适应：按表头「金额单位」行换算——万元人民币 ÷1万 转亿元（与本地库一致）；
+    美元值表直接报错拒绝，避免污染人民币口径。
     """
     rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S | re.I)
     table = [
@@ -63,6 +65,16 @@ def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
         for row in rows
     ]
     table = [cells for cells in table if cells]
+
+    unit_scale = 1.0
+    for cells in table:
+        joined = "|".join(cells)
+        if "金额单位" in joined:
+            if "万元人民币" in joined:
+                unit_scale = 10000.0
+            elif "万美元" in joined or "美元" in joined:
+                raise CustomsError("这是美元值表；请下载「人民币值」表，避免与本地库人民币口径混淆")
+            break
 
     month_col, cum_col, yoy_col = 3, 5, 9
     for cells in table:
@@ -91,8 +103,8 @@ def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
             if any(kw in name for kw in keywords) and not any(ex in name for ex in excludes):
                 matched[cn_name] = (
                     name,
-                    _numeric(cells[month_col]),
-                    _numeric(cells[cum_col]),
+                    _numeric(cells[month_col]) / unit_scale,
+                    _numeric(cells[cum_col]) / unit_scale,
                     _numeric(cells[yoy_col]),
                 )
                 break
