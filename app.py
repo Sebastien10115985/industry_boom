@@ -2194,14 +2194,21 @@ with customs_tab:
         st.info("暂无海关数据：点击「从海关总署更新」抓取，或上传文章页 HTML 导入。")
     else:
         customs_months = sorted(customs_frame["month"].unique())
-        yoy_long = customs_frame.dropna(subset=["export_cum_yoy_pct"])
+        # 同比曲线固定展示重点科技与装备类商品，避免图例过多
+        yoy_focus_items = (
+            "集成电路", "光电技术", "印刷电路", "生命科学技术",
+            "医疗仪器及器械", "变压器", "蓄电池", "汽车", "通用机械设备",
+        )
+        yoy_long = customs_frame[
+            customs_frame["commodity_cn"].isin(yoy_focus_items)
+        ].dropna(subset=["export_cum_yoy_pct"])
         yoy_chart = (
             alt.Chart(yoy_long)
             .mark_line(point=True)
             .encode(
                 x=alt.X("month:T", title=None),
                 y=alt.Y("export_cum_yoy_pct:Q", title="累计金额同比(%)"),
-                color=alt.Color("commodity_cn:N", title="商品"),
+                color=alt.Color("commodity_cn:N", title="商品", sort=list(yoy_focus_items)),
                 tooltip=[
                     alt.Tooltip("month:T", title="月份"),
                     alt.Tooltip("commodity_cn:N", title="商品"),
@@ -2212,7 +2219,11 @@ with customs_tab:
             .configure_view(stroke=None)
         )
         st.altair_chart(yoy_chart, width="stretch")
-        st.caption("重点出口商品累计金额同比走势（1—N 月累计，跨年 2 月重新累计）。")
+        st.caption(
+            "重点出口商品累计金额同比走势（1—N 月累计，跨年 2 月重新累计；"
+            "固定展示集成电路、光电技术、印刷电路、生命科学技术、医疗仪器及器械、"
+            "变压器、蓄电池、汽车、通用机械设备）。"
+        )
         customs_pick_cols = st.columns([2, 1])
         with customs_pick_cols[0]:
             picked_commodities = st.multiselect(
