@@ -752,7 +752,6 @@ try:
         raise ValueError(
             "本地还没有正式定期报告数据。请先在「行业详情」页签拉取近一年财报。"
         )
-    st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
 
     normalized = normalize_input(raw_data)
     # 演示模式：别名要覆盖全部公司，先加载行业财报全量缓存再统一脱敏
@@ -804,11 +803,6 @@ except Exception as exc:
 watchlist = ranking[ranking["in_watchlist"]].copy()
 industry_count = ranking["industry_l3_id"].nunique() if not ranking.empty else 0
 eligible_count = int(ranking["eligible"].sum()) if not ranking.empty else 0
-metric_columns = st.columns(4)
-metric_columns[0].metric("三级行业", f"{industry_count}")
-metric_columns[1].metric("本期已公告公司", f"{len(ranking)}")
-metric_columns[2].metric("符合完整度要求", f"{eligible_count}")
-metric_columns[3].metric("进入观察库", f"{len(watchlist)}")
 
 if ranking.empty:
     st.warning("当前截止日与报告期组合没有可排名公司。")
@@ -1804,6 +1798,12 @@ with risk_tab:
         )
 
 with watch_tab:
+    st.info("当前使用巨潮资讯正式定期报告的本地提取缓存。")
+    watch_metric_columns = st.columns(4)
+    watch_metric_columns[0].metric("三级行业", f"{industry_count}")
+    watch_metric_columns[1].metric("本期已公告公司", f"{len(ranking)}")
+    watch_metric_columns[2].metric("符合完整度要求", f"{eligible_count}")
+    watch_metric_columns[3].metric("进入观察库", f"{len(watchlist)}")
     industries = sorted(watchlist["industry_l3_name"].dropna().astype(str).unique())
     watch_controls = st.columns([3, 1])
     selected_industries = watch_controls[0].multiselect("筛选行业", industries, default=[])
