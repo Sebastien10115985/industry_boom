@@ -1764,7 +1764,7 @@ with risk_tab:
     )
     regime_chart = (
         regime_ruler + regime_notes + regime_cursor + regime_label
-    ).properties(width="container", height=150)
+    ).properties(width="container", height=150).configure(background="white")
     if is_admin:
         # 管理员专用：单视图纯矩形卡尺（Streamlit 仅对单视图图表支持 selection），点击即设置游标
         def _ruler_color(mid: float) -> str:
@@ -1791,11 +1791,17 @@ with risk_tab:
             ),
         )
         pick = alt.selection_point(encodings=["x"], nearest=True, name="设置游标")
-        admin_chart = admin_base.mark_rect().add_params(pick).encode(
-            x2="x1:Q",
-            y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
-            y2="y1:Q",
-            color=alt.Color("色:N", scale=None, legend=None),
+        admin_chart = (
+            admin_base.mark_rect()
+            .add_params(pick)
+            .encode(
+                x2="x1:Q",
+                y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+                y2="y1:Q",
+                color=alt.Color("色:N", scale=None, legend=None),
+            )
+            .properties(width="container", height=150)
+            .configure(background="white")
         )
         pick_event = st.altair_chart(admin_chart, on_select="rerun", width="stretch")
         st.caption(
@@ -2001,7 +2007,7 @@ with risk_tab:
                     vote_risk(item, False, macro_session)
                     st.rerun()
 
-        st.divider()
+            st.divider()
 
         # ---- 评论板块（缓冲栈/全局栈） ----
         st.markdown("##### 评论")
