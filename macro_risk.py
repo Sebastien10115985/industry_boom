@@ -90,18 +90,13 @@ def vote_risk(
     agree: bool,
     session_id: str,
     path: str | Path = DEFAULT_VOTES_PATH,
-) -> tuple[dict[str, float], bool]:
-    """对某风险项投票：认同 +0.1，不认同 -0.1。每会话每项一票。
-
-    返回 (最新分值表, 是否投票成功)。
-    """
+) -> dict[str, float]:
+    """对某风险项投票：认同 +0.1，不认同 -0.1（不限次数，返回最新分值表）。"""
     if item not in DEFAULT_RISK_VALUES:
-        return load_votes(path), False
+        return load_votes(path)
     data = _read_json(path, {"values": DEFAULT_RISK_VALUES, "votes": []})
     values = {key: float(value) for key, value in (data.get("values") or DEFAULT_RISK_VALUES).items()}
     votes: list[dict[str, object]] = list(data.get("votes") or [])
-    if any(v.get("item") == item and v.get("session_id") == session_id for v in votes):
-        return {key: values.get(key, DEFAULT_RISK_VALUES[key]) for key in DEFAULT_RISK_VALUES}, False
     delta = VOTE_STEP if agree else -VOTE_STEP
     values[item] = min(VOTE_MAX, max(VOTE_MIN, values.get(item, DEFAULT_RISK_VALUES[item]) + delta))
     votes.append(
@@ -113,7 +108,7 @@ def vote_risk(
         }
     )
     _atomic_write_json({"values": values, "votes": votes}, path)
-    return {key: values.get(key, DEFAULT_RISK_VALUES[key]) for key in DEFAULT_RISK_VALUES}, True
+    return {key: values.get(key, DEFAULT_RISK_VALUES[key]) for key in DEFAULT_RISK_VALUES}
 
 
 # ---- 评论（缓冲栈 / 全局栈） ----

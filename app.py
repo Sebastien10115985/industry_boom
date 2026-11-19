@@ -78,7 +78,6 @@ from macro_risk import (
     delete_comment,
     feature_comment,
     load_comments,
-    load_voters,
     load_votes,
     new_session_id,
     vote_risk,
@@ -1819,41 +1818,42 @@ with risk_tab:
 
         # ---- 宏观风险投票（红柱，全局共享分值） ----
         st.markdown("##### 宏观风险投票")
-        st.caption(
-            "四项宏观风险由全体用户共同打分（默认 80/80/80/50 分）：认同当前风险水平则分值 +0.1，"
-            "不认同则 -0.1；每人每项限投一票，分值全局实时共享。"
-        )
         macro_session = st.session_state.setdefault("macro_session_id", new_session_id())
-        voters = load_voters()
-        vote_cols = st.columns(4)
-        for slot, (item, value) in zip(vote_cols, load_votes().items()):
-            with slot:
-                st.metric(item, f"{value:.1f}", border=True)
-                has_voted = macro_session in voters.get(item, set())
-                up_clicked = st.button("认同 +0.1", key=f"vote_up_{item}", disabled=has_voted, width="stretch")
-                down_clicked = st.button("不认同 -0.1", key=f"vote_down_{item}", disabled=has_voted, width="stretch")
-                if has_voted:
-                    st.caption("已参与")
-                elif up_clicked or down_clicked:
-                    _, ok = vote_risk(item, up_clicked, macro_session)
-                    if not ok:
-                        st.warning("你已参与该风险项投票。")
-                    else:
-                        st.rerun()
         vote_values = load_votes()
-        vote_frame = pd.DataFrame({"风险项": list(vote_values), "分值": list(vote_values.values())})
+        vote_frame = pd.DataFrame(
+            {
+                "风险项": list(vote_values),
+                "分值": list(vote_values.values()),
+                "标签": [f"{item}，{value:.1f}分" for item, value in vote_values.items()],
+            }
+        )
+        vote_base = alt.Chart(vote_frame).encode(
+            x=alt.X("风险项:N", sort=list(DEFAULT_RISK_VALUES), title=None),
+        )
+        vote_bar = vote_base.mark_bar(color="#e05a4e").encode(
+            y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
+            tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
+        )
+        vote_label = vote_base.mark_text(dy=-8, color="#a03a30", fontSize=13, fontWeight=600).encode(
+            y=alt.Y("分值:Q"),
+            text=alt.Text("标签:N"),
+        )
         vote_chart = (
-            alt.Chart(vote_frame)
-            .mark_bar(color="#e05a4e")
-            .encode(
-                x=alt.X("风险项:N", sort=list(DEFAULT_RISK_VALUES), title=None),
-                y=alt.Y("分值:Q", title="风险分值", scale=alt.Scale(domain=[0, 100])),
-                tooltip=[alt.Tooltip("风险项:N", title="风险项"), alt.Tooltip("分值:Q", title="当前分值", format=".1f")],
-            )
+            (vote_bar + vote_label)
             .properties(width="container", height=180)
             .configure_view(stroke=None)
         )
         st.altair_chart(vote_chart, width="stretch")
+        icon_cols = st.columns(4)
+        for slot, item in zip(icon_cols, vote_values):
+            slot.markdown(f"<div style='text-align:center;font-size:0.85rem'>{item}</div>", unsafe_allow_html=True)
+            up_col, down_col = slot.columns(2)
+            if up_col.button("👍", key=f"vote_up_{item}", help="认同"):
+                vote_risk(item, True, macro_session)
+                st.rerun()
+            if down_col.button("👎", key=f"vote_down_{item}", help="不认同"):
+                vote_risk(item, False, macro_session)
+                st.rerun()
 
         # ---- 评论板块（缓冲栈/全局栈） ----
         st.markdown("##### 评论")

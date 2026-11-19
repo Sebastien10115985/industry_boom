@@ -37,32 +37,27 @@ class MacroRiskTest(unittest.TestCase):
         self.assertEqual(values["战争"], 80.0)
         self.assertEqual(values["其它"], 50.0)
 
-    def test_vote_once_per_session(self) -> None:
+    def test_vote_repeated_allowed(self) -> None:
         session = new_session_id()
-        values, ok = vote_risk("战争", True, session, self.votes_path)
-        self.assertTrue(ok)
+        values = vote_risk("战争", True, session, self.votes_path)
         self.assertAlmostEqual(values["战争"], 80.1)
-        # 同会话重复投票被拒
-        values, ok = vote_risk("战争", True, session, self.votes_path)
-        self.assertFalse(ok)
+        # 同会话可重复投票，分值持续累计
+        values = vote_risk("战争", True, session, self.votes_path)
+        self.assertAlmostEqual(values["战争"], 80.2)
+        values = vote_risk("战争", False, new_session_id(), self.votes_path)
         self.assertAlmostEqual(values["战争"], 80.1)
-        # 其它会话可投
-        values, ok = vote_risk("战争", False, new_session_id(), self.votes_path)
-        self.assertTrue(ok)
-        self.assertAlmostEqual(values["战争"], 80.0)
         voters = load_voters(self.votes_path)
         self.assertEqual(len(voters["战争"]), 2)
 
     def test_vote_clamped_and_unknown_item(self) -> None:
-        values, ok = vote_risk("不存在项", True, new_session_id(), self.votes_path)
-        self.assertFalse(ok)
+        values = vote_risk("不存在项", True, new_session_id(), self.votes_path)
         self.assertEqual(values, DEFAULT_RISK_VALUES)
         # 极限值限幅
         self.votes_path.write_text(
             '{"values": {"战争": 100.0, "美元紧缩": 80.0, "中国通缩": 80.0, "其它": 50.0}, "votes": []}',
             encoding="utf-8",
         )
-        values, ok = vote_risk("战争", True, new_session_id(), self.votes_path)
+        values = vote_risk("战争", True, new_session_id(), self.votes_path)
         self.assertEqual(values["战争"], 100.0)
 
     def test_comment_lifecycle(self) -> None:
