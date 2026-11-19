@@ -1771,7 +1771,7 @@ with risk_tab:
 
     risk_cols = st.columns([3, 1])
     with risk_cols[1]:
-        if risk_cols[1].button("从中金所更新日K线", key="risk_update"):
+        if risk_cols[1].button("从中金所更新日K线", key="risk_update", type="primary"):
             try:
                 update_if_daily(months=3)
                 st.success("已更新至最新交易日。")
@@ -1840,14 +1840,15 @@ with risk_tab:
             for level, message in alerts:
                 (st.error if level == "error" else st.warning)(message)
 
-        risk_frame["ma60"] = closes.rolling(60).mean()
-        window = risk_frame.iloc[-60:]
+        risk_frame["ema60"] = closes.ewm(span=60, adjust=False).mean()
+        window = risk_frame
+        zoom = alt.selection_interval(encodings=["x"], bind="scales", name="时间轴平移缩放")
         base_chart = alt.Chart(window).encode(x=alt.X("date:T", title=None))
-        candle_range = base_chart.mark_bar(size=8).encode(
+        candle_range = base_chart.mark_bar(size=1.5).encode(
             y=alt.Y("low:Q", title=None, scale=alt.Scale(zero=False)),
             y2="high:Q",
         )
-        candle_body = base_chart.mark_bar(size=4).encode(
+        candle_body = base_chart.mark_bar(size=1).encode(
             y=alt.Y("open:Q", scale=alt.Scale(zero=False)),
             y2="close:Q",
             color=alt.condition(
@@ -1856,9 +1857,9 @@ with risk_tab:
                 alt.value("#3d9c5f"),
             ),
         )
-        ma60_line = base_chart.mark_line(color="#c98a1c", size=2).encode(
-            y=alt.Y("ma60:Q", scale=alt.Scale(zero=False)),
-            tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ma60:Q", title="60日均线", format=",.1f")],
+        ema60_line = base_chart.mark_line(color="#c98a1c", size=2).encode(
+            y=alt.Y("ema60:Q", scale=alt.Scale(zero=False)),
+            tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ema60:Q", title="60日EMA", format=",.1f")],
         )
         volume_chart = base_chart.mark_bar(color="#9fb3c8").encode(
             y=alt.Y("volume:Q", title="成交量(手)"),
@@ -1872,13 +1873,19 @@ with risk_tab:
             ],
         )
         st.altair_chart(
-            (candle_range + candle_body + ma60_line).properties(width="container", height=260),
+            (candle_range + candle_body + ema60_line)
+            .add_params(zoom)
+            .properties(width="container", height=260),
             width="stretch",
         )
-        st.altair_chart(volume_chart.properties(width="container", height=110), width="stretch")
+        st.altair_chart(
+            volume_chart.add_params(zoom).properties(width="container", height=110),
+            width="stretch",
+        )
         st.caption(
-            f"近 {len(window)} 个交易日（{window['date'].min():%Y-%m-%d} ~ {window['date'].max():%Y-%m-%d}），"
-            "红涨绿跌，黄色实线为60日均线（基于全部历史计算，用于观察大趋势）；"
+            f"共 {len(window)} 个交易日（{window['date'].min():%Y-%m-%d} ~ {window['date'].max():%Y-%m-%d}），"
+            "红涨绿跌，黄色实线为60日EMA（指数移动平均，用于观察大趋势）；"
+            "鼠标在图上左右拖拽可平移时间轴、滚轮缩放（K线与成交量联动）。"
             "成交额按日汇总该主力合约。数据源：中金所官网历史数据包。"
         )
 
