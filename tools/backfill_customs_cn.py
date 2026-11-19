@@ -97,6 +97,11 @@ def get_text(session: requests.Session, url: str) -> str:
     if len(text) < 2500 or "$_ts" in text[:4000]:
         raise CustomsError(f"Cookie 失效或被 WAF 拦截：{url}")
     return text
+
+
+def find_report_section(session: requests.Session) -> str:
+    """从首页导航找「海关统计月报」栏目地址。"""
+    home = get_text(session, HOME)
     for text_hint in ("统计月报", "统计快讯", "统计"):
         pattern = re.compile(
             r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>[^<]*" + text_hint + r"[^<]*</a>", re.I
