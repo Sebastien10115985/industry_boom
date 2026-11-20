@@ -1719,7 +1719,8 @@ with risk_tab:
         latest = regime_report["latest"]
         regime_value = float(latest["score"])
         regime_state = str(latest["state"])
-        bounds = load_regime_config().thresholds["composite"]
+        regime_config = load_regime_config()
+        bounds = regime_config.thresholds["composite"]
         bear_line = float(bounds["bear"])
         bull_line = float(bounds["bull"])
 
@@ -1802,41 +1803,46 @@ with risk_tab:
         if latest["warnings"]:
             action_cols[1].warning("；".join(latest["warnings"][:3]))
 
-        with st.expander("当日五指数明细", expanded=True):
-            st.dataframe(regime_report["table"], width="stretch", hide_index=True)
-        with st.expander("分组状态", expanded=False):
-            group_rows = [
+        st.markdown("**历史综合分曲线**")
+        history = regime_report["composite"][["date", "score", "state"]].copy()
+        history["state"] = history["state"].map(STATE_LABELS).fillna(history["state"])
+        line = alt.Chart(history).mark_line(color="#1d4ed8", strokeWidth=1.5).encode(
+            x=alt.X("date:T", title=None),
+            y=alt.Y("score:Q", title="综合分", scale=alt.Scale(domain=[-100, 100])),
+        )
+        points = alt.Chart(history.iloc[::20]).mark_circle(size=18).encode(
+            x=alt.X("date:T", title=None),
+            y=alt.Y("score:Q", scale=alt.Scale(domain=[-100, 100])),
+            color=alt.Color(
+                "state:N",
+                title="状态",
+                scale=alt.Scale(
+                    domain=["熊市", "震荡市", "牛市"],
+                    range=["#16a34a", "#9ca3af", "#dc2626"],
+                ),
+            ),
+        )
+        rules = alt.Chart(pd.DataFrame({"y": [bear_line, bull_line]})).mark_rule(
+            color="#6b7280", strokeDash=[4, 3]
+        ).encode(y="y:Q")
+        st.altair_chart((line + points + rules).properties(height=240, width="container"), width="stretch")
+
+        st.markdown("**分组状态**")
+        group_rows = []
+        for key, item in latest["groups"].items():
+            members = regime_config.groups.get(key, [])
+            member_names = " + ".join(regime_config.name_of(code) for code in members)
+            group_rows.append(
                 {
-                    "分组": item["label"],
+                    "分组": f"{item['label']}（{member_names}）" if member_names else item["label"],
                     "分值": item["score"],
                     "状态": item["state_label"],
                 }
-                for item in latest["groups"].values()
-            ]
-            st.dataframe(pd.DataFrame(group_rows), width="stretch", hide_index=True)
-        with st.expander("历史综合分曲线", expanded=False):
-            history = regime_report["composite"][["date", "score", "state"]].copy()
-            history["state"] = history["state"].map(STATE_LABELS).fillna(history["state"])
-            line = alt.Chart(history).mark_line(color="#1d4ed8", strokeWidth=1.5).encode(
-                x=alt.X("date:T", title=None),
-                y=alt.Y("score:Q", title="综合分", scale=alt.Scale(domain=[-100, 100])),
             )
-            points = alt.Chart(history.iloc[::20]).mark_circle(size=18).encode(
-                x=alt.X("date:T", title=None),
-                y=alt.Y("score:Q", scale=alt.Scale(domain=[-100, 100])),
-                color=alt.Color(
-                    "state:N",
-                    title="状态",
-                    scale=alt.Scale(
-                        domain=["熊市", "震荡市", "牛市"],
-                        range=["#16a34a", "#9ca3af", "#dc2626"],
-                    ),
-                ),
-            )
-            rules = alt.Chart(pd.DataFrame({"y": [bear_line, bull_line]})).mark_rule(
-                color="#6b7280", strokeDash=[4, 3]
-            ).encode(y="y:Q")
-            st.altair_chart((line + points + rules).properties(height=240, width="container"), width="stretch")
+        st.dataframe(pd.DataFrame(group_rows), width="stretch", hide_index=True)
+
+        st.markdown("**当日五指数明细**")
+        st.dataframe(regime_report["table"], width="stretch", hide_index=True)
         with st.expander("阈值校准与回测摘要", expanded=False):
             calibration_rows = []
             for name, item in regime_report["calibration"].items():
