@@ -81,9 +81,9 @@ from macro_risk import (
     load_regime,
     load_votes,
     new_session_id,
-    save_regime,
     vote_risk,
 )
+from regime_provider import compute_regime
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -407,7 +407,7 @@ def _record_visit() -> dict[str, int]:
 
 # ---- 免责声明：首次打开必须确认，页面常驻醒目提示条 ----
 DISCLAIMER_TEXT = (
-    "本应用基于国家统计局公布的规模以上工业生产状况信息及上市公司公开披露的财务报告，进行数据的整理与可视化展示。\n"
+    "本应用基于国家统计局公布的规模以上工业生产状况信息、海关统计月报、上市公司公开披露的财报，进行数据整理与可视化展示。\n"
     "相关数据存在发布延迟、缺失或统计口径差异，图表与排名不代表对未来走势的判断。仅供研究与学习交流之用。\n"
     "不构成任何投资建议、收益承诺或买卖依据。股市风险大，投资需谨慎。收益和风险自担。"
 )
@@ -1704,11 +1704,11 @@ risk_tab, watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, qua
 )
 
 with risk_tab:
-    # ---- 市场状态游标卡尺（管理员可设当前值） ----
+    # ---- 市场状态游标卡尺（后台算法自动计算，页面只读） ----
     def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
         return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
 
-    regime_value = load_regime()
+    regime_value = compute_regime()
     ruler_rows = []
     for x0 in range(-100, 100):
         mid = x0 + 0.5
@@ -1764,80 +1764,8 @@ with risk_tab:
     regime_chart = (
         regime_ruler + regime_notes + regime_cursor + regime_label
     ).properties(width="container", height=150).configure(background="white")
-    if is_admin:
-        # 管理员专用：单视图纯矩形卡尺（Streamlit 仅对单视图图表支持 selection），点击即设置游标
-        def _ruler_color(mid: float) -> str:
-            if mid <= -20:
-                return _lerp_hex((134, 201, 138), (13, 90, 24), min(1.0, max(0.0, (-20 - mid) / 80)))
-            if mid >= 20:
-                return _lerp_hex((229, 139, 125), (126, 21, 11), min(1.0, max(0.0, (mid - 20) / 80)))
-            return "#c2c2c2"
-
-        cursor_cell = min(99, max(-100, int(regime_value // 1)))
-        admin_rows = []
-        palette: list[str] = []
-        for x0 in range(-100, 100):
-            if x0 == cursor_cell:
-                color, y0v, y1v = "#1f2937", 0.05, 1.95
-            else:
-                color, y0v, y1v = _ruler_color(x0 + 0.5), 0.7, 1.7
-            palette.append(color)
-            admin_rows.append({"x0": x0, "x1": x0 + 1, "y0": y0v, "y1": y1v, "fill": color})
-        admin_base = alt.Chart(pd.DataFrame(admin_rows)).encode(
-            x=alt.X(
-                "x0:Q",
-                title=None,
-                scale=alt.Scale(domain=[-100, 100]),
-                axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
-            ),
-        )
-        pick = alt.selection_point(encodings=["x"], nearest=True, name="pick_cursor")
-        uniq_colors = list(dict.fromkeys(palette))
-        admin_chart = (
-            admin_base.mark_rect()
-            .add_params(pick)
-            .encode(
-                x2="x1:Q",
-                y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
-                y2="y1:Q",
-                color=alt.Color("fill:N", scale=alt.Scale(domain=uniq_colors, range=uniq_colors), legend=None),
-            )
-            .properties(width="container", height=150)
-            .configure(background="white")
-        )
-        pick_event = st.altair_chart(admin_chart, on_select="rerun", width="stretch")
-        note_cols = st.columns(3)
-        note_cols[0].markdown(
-            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>熊市</div>",
-            unsafe_allow_html=True,
-        )
-        note_cols[1].markdown(
-            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>震荡市</div>",
-            unsafe_allow_html=True,
-        )
-        note_cols[2].markdown(
-            "<div style='text-align:center;font-size:0.92rem;font-weight:600'>牛市</div>",
-            unsafe_allow_html=True,
-        )
-        st.caption(f"管理员：点击卡尺任意位置，游标（黑柱，当前 {regime_value:.0f}）即移动到该处并全局保存。")
-        picked = ((pick_event.selection or {}).get("pick_cursor") or []) if pick_event is not None else []
-        if picked:
-            point = picked[0] if isinstance(picked[0], dict) else {}
-            raw_x = point.get("x")
-            if raw_x is None:
-                raw_x = point.get("x0")
-            if raw_x is None:
-                for value in point.values():
-                    if isinstance(value, (int, float)):
-                        raw_x = value
-                        break
-            if raw_x is not None:
-                new_value = min(100.0, max(-100.0, float(raw_x)))
-                if abs(new_value - regime_value) >= 0.5:
-                    save_regime(new_value, is_admin=True)
-                    st.rerun()
-    else:
-        st.altair_chart(regime_chart, width="stretch")
+    st.altair_chart(regime_chart, width="stretch")
+    st.caption("当前市场状态由后台算法自动计算，页面只读。")
     st.divider()
 
     st.caption(
