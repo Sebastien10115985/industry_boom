@@ -83,10 +83,9 @@ from macro_risk import (
     new_session_id,
     vote_risk,
 )
-from bull_bear.calibration import suggest_thresholds
 from bull_bear.config import load_config as load_regime_config, ruler_bands
 from bull_bear.scoring import STATE_LABELS
-from regime_provider import compute_full_report
+from regime_provider import compute_full_report, load_cached_report
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1707,13 +1706,19 @@ risk_tab, watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, qua
 )
 
 with risk_tab:
-    st.subheader("A股牛熊状态评分")
+    st.subheader("A股牛熊估算")
     refresh_regime = bool(st.session_state.pop("regime_refresh", False))
     try:
-        with st.spinner("正在更新五指数日线并重新计算..." if refresh_regime else "正在计算牛熊状态..."):
-            regime_report = compute_full_report(force_refresh=refresh_regime)
+        if refresh_regime:
+            with st.spinner("正在更新五指数日线并重新估算..."):
+                regime_report = compute_full_report(force_refresh=True)
+        else:
+            regime_report = load_cached_report()
+            if regime_report is None:
+                with st.spinner("首次估算中，结果将写入缓存..."):
+                    regime_report = compute_full_report()
     except Exception as exc:
-        st.error(f"牛熊状态评分计算失败：{exc}")
+        st.error(f"牛熊估算失败：{exc}")
         regime_report = None
 
     if regime_report is not None:
@@ -1820,8 +1825,9 @@ with risk_tab:
         if action_cols[0].button("更新五指数日线", key="regime_refresh_btn", type="primary"):
             st.session_state["regime_refresh"] = True
             st.rerun()
-        if latest["warnings"]:
+        if latest.get("warnings"):
             action_cols[1].warning("；".join(latest["warnings"][:3]))
+        st.caption("页面默认读取已缓存的估算结果；只有点击「更新五指数日线」才会重新拉取数据并计算。")
 
         st.markdown("**历史综合分曲线**")
         history = regime_report["composite"][["date", "score", "state"]].copy()
@@ -1863,42 +1869,34 @@ with risk_tab:
 
         st.markdown("**当日五指数明细**")
         st.dataframe(regime_report["table"], width="stretch", hide_index=True)
-        with st.expander("阈值校准与回测摘要", expanded=False):
-            calibration_rows = []
-            for name, item in regime_report["calibration"].items():
-                shares = item["shares"]
-                suggestion = item["suggested"]
-                wf_shares = item.get("walk_forward", {}).get("shares", {})
-                calibration_rows.append(
-                    {
-                        "序列": name,
-                        "熊市": f"{shares.get('BEAR', 0):.0%}",
-                        "震荡": f"{shares.get('RANGE', 0):.0%}",
-                        "牛市": f"{shares.get('BULL', 0):.0%}",
-                        "切换次数": item["switches"],
-                        "建议阈值": f"{suggestion['bear']:.0f} / {suggestion['bull']:.0f}",
-                        "样本外熊/震/牛": "/".join(
-                            f"{wf_shares.get(key, 0):.0%}" for key in ("BEAR", "RANGE", "BULL")
-                        ),
-                    }
-                )
-            st.dataframe(pd.DataFrame(calibration_rows), width="stretch", hide_index=True)
-            st.caption(
-                f"当前目标：熊市 {target_bear:.0%} / 震荡 {target_range:.0%} / 牛市 {target_bull:.0%}；"
-                "建议阈值按完整历史网格搜索得到，样本外复核按 70/30 切分。"
-                "修改 config/bull_bear.json 的 target_shares 后可刷新查看新建议，或点下方按钮重算并保存。"
-            )
-            if st.button("按当前目标重算并保存阈值", key="recalibrate_regime"):
-                try:
-                    suggestions = suggest_thresholds(
-                        regime_report["scores"], regime_report["composite"], regime_config
-                    )
-                    regime_config.thresholds.update(suggestions)
-                    regime_config.save()
-                    st.success("已按当前目标占比重算阈值并保存。")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"重算失败：{exc}")
+        st.markdown("**估算方法与当前阈值**")
+        factor_weights = regime_config.weights
+        group_weights = regime_config.group_weights
+        group_bounds = regime_config.thresholds
+        st.caption(
+            "取上证50、沪深300、中证500、创业板指、科创50五个宽基指数日线，"
+            "分别计算趋势偏离、中期均线斜率、长周期方向三个因子，"
+            "按过去 1250 个交易日滚动分位标准化到 [-1, 1] 后加权成各指数分值；"
+            f"三因子权重 {float(factor_weights['f1']):.0%} / {float(factor_weights['f2']):.0%} / "
+            f"{float(factor_weights['f3']):.0%}，"
+            f"大盘价值 / 中证500 / 成长权重 {float(group_weights['large_value']):.0%} / "
+            f"{float(group_weights['mid500']):.0%} / {float(group_weights['growth']):.0%}，"
+            f"广度以 {float(regime_config.breadth_multiplier):.1f} 倍乘调节置信度。"
+        )
+        st.caption(
+            f"当前状态阈值：单指数 {float(group_bounds['index']['bear']):.0f} / "
+            f"{float(group_bounds['index']['bull']):.0f}，"
+            f"大盘价值 {float(group_bounds['large_value']['bear']):.0f} / "
+            f"{float(group_bounds['large_value']['bull']):.0f}，"
+            f"中证500 {float(group_bounds['mid500']['bear']):.0f} / "
+            f"{float(group_bounds['mid500']['bull']):.0f}，"
+            f"成长 {float(group_bounds['growth']['bear']):.0f} / "
+            f"{float(group_bounds['growth']['bull']):.0f}，"
+            f"综合分 {score_bear:.0f} / {score_bull:.0f}。"
+            "分值低于下限为熊市，高于上限为牛市，之间为震荡市。"
+            f"阈值按目标占比 熊 {target_bear:.0%} / 震 {target_range:.0%} / 牛 {target_bull:.0%} 校准；"
+            "如需调整，修改 config/bull_bear.json 的 target_shares 后运行 tools/recalibrate_bull_bear.py。"
+        )
     st.divider()
 
     st.caption(

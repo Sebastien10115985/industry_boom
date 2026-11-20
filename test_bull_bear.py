@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from dataclasses import replace
@@ -26,6 +27,7 @@ from bull_bear import (  # noqa: E402
     ruler_bands,
     state_of,
 )
+from regime_provider import load_cached_report  # noqa: E402
 
 
 def _price_frame(count: int, offset: float = 0.0) -> pd.DataFrame:
@@ -186,6 +188,34 @@ class BullBearAlgorithmTests(unittest.TestCase):
         self.assertAlmostEqual(result["shares"]["BULL"], 0.25, delta=0.01)
         self.assertIn("suggested", result)
         self.assertIn("walk_forward", result)
+
+    def test_cached_report_loads_without_recalculation(self) -> None:
+        temp_dir = TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base = Path(temp_dir.name)
+        latest_path = base / "latest.json"
+        history_path = base / "history.csv"
+        config_path = base / "config.json"
+
+        payload = self.config.to_dict()
+        payload["latest_path"] = str(latest_path)
+        payload["history_path"] = str(history_path)
+        config_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+        self.assertIsNone(load_cached_report(config_path))
+
+        latest_path.write_text(json.dumps({"score": 12.3, "indices": []}), encoding="utf-8")
+        pd.DataFrame(
+            {"date": ["2026-01-05", "2026-01-06"], "S": [10.0, 12.3], "state": ["震荡市", "震荡市"]}
+        ).to_csv(history_path, index=False, encoding="utf-8-sig")
+
+        cached = load_cached_report(config_path)
+        self.assertIsNotNone(cached)
+        assert cached is not None
+        self.assertTrue(cached["cached"])
+        self.assertAlmostEqual(float(cached["latest"]["score"]), 12.3)
+        self.assertEqual(len(cached["composite"]), 2)
+        self.assertIn("score", cached["composite"].columns)
 
 
 if __name__ == "__main__":

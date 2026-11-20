@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from bull_bear import (
     DEFAULT_CONFIG_PATH,
@@ -18,7 +21,7 @@ from bull_bear import (
     load_config,
     load_prices,
 )
-from bull_bear.report import build_report
+from bull_bear.report import LATEST_COLUMNS, build_report
 from macro_risk import load_regime, save_regime
 
 DEFAULT_REGIME = -80.0
@@ -32,6 +35,30 @@ def _persist(value: float) -> None:
     except Exception:
         # 缓存写失败不影响本次计算结果展示
         pass
+
+
+def load_cached_report(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any] | None:
+    """从磁盘读取已算好的牛熊估算结果，页面打开时不做任何计算。"""
+    config = load_config(config_path)
+    if not config.latest_path.exists() or not config.history_path.exists():
+        return None
+    try:
+        latest = json.loads(config.latest_path.read_text(encoding="utf-8"))
+        history = pd.read_csv(config.history_path, dtype={"date": str}, encoding="utf-8-sig")
+        history["date"] = pd.to_datetime(history["date"], errors="coerce")
+        history = history.dropna(subset=["date"])
+        if "score" not in history.columns and "S" in history.columns:
+            history = history.rename(columns={"S": "score"})
+        if history.empty or not {"date", "score", "state"}.issubset(history.columns):
+            return None
+        return {
+            "latest": latest,
+            "table": pd.DataFrame(latest.get("indices", []), columns=LATEST_COLUMNS),
+            "composite": history[["date", "score", "state"]].copy(),
+            "cached": True,
+        }
+    except Exception:
+        return None
 
 
 def compute_full_report(

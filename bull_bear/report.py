@@ -8,7 +8,6 @@ from typing import Any
 
 import pandas as pd
 
-from .calibration import calibration_summary
 from .config import RegimeConfig
 from .data_loader import PriceBundle
 from .scoring import STATE_LABELS
@@ -102,6 +101,5 @@ def build_report(
         "composite": composite,
         "latest": latest,
         "table": latest_table(scores, config),
-        "calibration": calibration_summary(scores, composite, config),
         "history_path": history_path,
     }
