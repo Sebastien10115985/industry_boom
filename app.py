@@ -83,7 +83,8 @@ from macro_risk import (
     new_session_id,
     vote_risk,
 )
-from bull_bear.config import load_config as load_regime_config
+from bull_bear.calibration import suggest_thresholds
+from bull_bear.config import load_config as load_regime_config, ruler_bands
 from bull_bear.scoring import STATE_LABELS
 from regime_provider import compute_full_report
 from prosperity import (
@@ -1721,8 +1722,12 @@ with risk_tab:
         regime_state = str(latest["state"])
         regime_config = load_regime_config()
         bounds = regime_config.thresholds["composite"]
-        bear_line = float(bounds["bear"])
-        bull_line = float(bounds["bull"])
+        score_bear = float(bounds["bear"])
+        score_bull = float(bounds["bull"])
+        ruler_bear, ruler_bull = ruler_bands(regime_config)
+        target_bear = float(regime_config.target_shares["BEAR"])
+        target_range = float(regime_config.target_shares["RANGE"])
+        target_bull = float(regime_config.target_shares["BULL"])
 
         metric_cols = st.columns(5)
         metric_cols[0].metric("综合分", f"{regime_value:.1f}")
@@ -1742,11 +1747,11 @@ with risk_tab:
         ruler_rows = []
         for x0 in range(-100, 100):
             mid = x0 + 0.5
-            if mid <= bear_line:
-                t = min(1.0, max(0.0, (bear_line - mid) / (bear_line + 100)))
+            if mid <= ruler_bear:
+                t = min(1.0, max(0.0, (ruler_bear - mid) / (ruler_bear + 100)))
                 color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
-            elif mid >= bull_line:
-                t = min(1.0, max(0.0, (mid - bull_line) / (100 - bull_line)))
+            elif mid >= ruler_bull:
+                t = min(1.0, max(0.0, (mid - ruler_bull) / (100 - ruler_bull)))
                 color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
             else:
                 color = "#c2c2c2"
@@ -1757,7 +1762,7 @@ with risk_tab:
                 "x0:Q",
                 title=None,
                 scale=alt.Scale(domain=[-100, 100]),
-                axis=alt.Axis(values=[-100, int(bear_line), 0, int(bull_line), 100]),
+                axis=alt.Axis(values=[-100, int(ruler_bear), 0, int(ruler_bull), 100]),
             ),
         )
         regime_ruler = regime_base.mark_rect().encode(
@@ -1768,7 +1773,17 @@ with risk_tab:
         )
         regime_notes = (
             alt.Chart(
-                pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.3, 0.3, 0.3]})
+                pd.DataFrame(
+                    {
+                        "刻度": [
+                            (-100 + ruler_bear) / 2,
+                            (ruler_bear + ruler_bull) / 2,
+                            (ruler_bull + 100) / 2,
+                        ],
+                        "注释": ["熊市", "震荡市", "牛市"],
+                        "note_y": [0.3, 0.3, 0.3],
+                    }
+                )
             )
             .mark_text(dy=0, fontSize=15, fontWeight=600, color="#000000")
             .encode(
@@ -1795,6 +1810,11 @@ with risk_tab:
             regime_ruler + regime_notes + regime_cursor + regime_label
         ).properties(width="container", height=150).configure(background="white")
         st.altair_chart(regime_chart, width="stretch")
+        st.caption(
+            f"卡尺色带按目标占比划分：熊市 {target_bear:.0%}（{int(ruler_bear + 100)} 格）、"
+            f"震荡 {target_range:.0%}（{int(100 + ruler_bull - (ruler_bear + 100))} 格）、"
+            f"牛市 {target_bull:.0%}（{int(100 - ruler_bull)} 格）。"
+        )
 
         action_cols = st.columns([1, 4])
         if action_cols[0].button("更新五指数日线", key="regime_refresh_btn", type="primary"):
@@ -1822,7 +1842,7 @@ with risk_tab:
                 ),
             ),
         )
-        rules = alt.Chart(pd.DataFrame({"y": [bear_line, bull_line]})).mark_rule(
+        rules = alt.Chart(pd.DataFrame({"y": [score_bear, score_bull]})).mark_rule(
             color="#6b7280", strokeDash=[4, 3]
         ).encode(y="y:Q")
         st.altair_chart((line + points + rules).properties(height=240, width="container"), width="stretch")
@@ -1864,8 +1884,21 @@ with risk_tab:
                 )
             st.dataframe(pd.DataFrame(calibration_rows), width="stretch", hide_index=True)
             st.caption(
-                "目标：牛市与熊市各 20~35%、震荡 40~60%；建议阈值由完整历史网格搜索得到，样本外复核按 70/30 切分。"
+                f"当前目标：熊市 {target_bear:.0%} / 震荡 {target_range:.0%} / 牛市 {target_bull:.0%}；"
+                "建议阈值按完整历史网格搜索得到，样本外复核按 70/30 切分。"
+                "修改 config/bull_bear.json 的 target_shares 后可刷新查看新建议，或点下方按钮重算并保存。"
             )
+            if st.button("按当前目标重算并保存阈值", key="recalibrate_regime"):
+                try:
+                    suggestions = suggest_thresholds(
+                        regime_report["scores"], regime_report["composite"], regime_config
+                    )
+                    regime_config.thresholds.update(suggestions)
+                    regime_config.save()
+                    st.success("已按当前目标占比重算阈值并保存。")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"重算失败：{exc}")
     st.divider()
 
     st.caption(

@@ -8,7 +8,7 @@ import pandas as pd
 from .config import RegimeConfig
 from .scoring import state_of
 
-TARGET_SHARES = {"BEAR": 0.275, "RANGE": 0.45, "BULL": 0.275}
+TARGET_SHARES = {"BEAR": 0.20, "RANGE": 0.65, "BULL": 0.15}
 
 
 def _shares(states: pd.Series) -> dict[str, float]:
@@ -75,13 +75,38 @@ def calibration_summary(scores: pd.DataFrame, composite: pd.DataFrame, config: R
     for item in config.indices:
         code = str(item["code"])
         subset = scores[scores["code"] == code].set_index("date")["score"].sort_index()
-        summary[config.name_of(code)] = calibrate_series(subset, config.thresholds["index"])
+        summary[config.name_of(code)] = calibrate_series(
+            subset, config.thresholds["index"], target=config.target_shares
+        )
     for group in config.groups:
         summary[_group_label(group)] = calibrate_series(
-            composite[f"group_{group}"], config.thresholds.get(group, config.thresholds["index"])
+            composite[f"group_{group}"],
+            config.thresholds.get(group, config.thresholds["index"]),
+            target=config.target_shares,
         )
-    summary["综合分"] = calibrate_series(composite["score"], config.thresholds["composite"])
+    summary["综合分"] = calibrate_series(
+        composite["score"], config.thresholds["composite"], target=config.target_shares
+    )
     return summary
+
+
+def suggest_thresholds(
+    scores: pd.DataFrame,
+    composite: pd.DataFrame,
+    config: RegimeConfig,
+    step: float = 1.0,
+) -> dict[str, dict[str, float]]:
+    """按当前配置的目标占比，重新搜索单指数/分组/综合分阈值。"""
+    target = config.target_shares
+    suggestions = {
+        "index": _grid_search(scores["score"].dropna(), target, step),
+        "composite": _grid_search(composite["score"].dropna(), target, step),
+    }
+    for group in config.groups:
+        column = f"group_{group}"
+        if column in composite.columns:
+            suggestions[group] = _grid_search(composite[column].dropna(), target, step)
+    return suggestions
 
 
 def _group_label(group: str) -> str:

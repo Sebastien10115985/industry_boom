@@ -1,6 +1,6 @@
 """A股牛熊状态评分算法（五宽基指数、三因子、分位标准化、广度调节）。"""
 
-from .config import DEFAULT_CONFIG_PATH, RegimeConfig, load_config
+from .config import DEFAULT_CONFIG_PATH, RegimeConfig, load_config, ruler_bands
 from .data_loader import IndexDataError, PriceBundle, load_prices
 from .factors import compute_factors
 from .scoring import (
@@ -9,13 +9,14 @@ from .scoring import (
     compute_index_scores,
     state_of,
 )
-from .calibration import calibrate_series
+from .calibration import calibrate_series, suggest_thresholds
 from .report import build_report
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
     "RegimeConfig",
     "load_config",
+    "ruler_bands",
     "IndexDataError",
     "PriceBundle",
     "load_prices",
@@ -25,5 +26,6 @@ __all__ = [
     "compute_composite",
     "state_of",
     "calibrate_series",
+    "suggest_thresholds",
     "build_report",
 ]

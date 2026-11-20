@@ -23,6 +23,7 @@ from bull_bear import (  # noqa: E402
     compute_group_scores,
     compute_index_scores,
     load_prices,
+    ruler_bands,
     state_of,
 )
 
@@ -166,6 +167,17 @@ class BullBearAlgorithmTests(unittest.TestCase):
         self.assertEqual(second.fetched, [])
         with self.assertRaises(IndexDataError):
             load_prices(config, force_refresh=True, fetcher=broken, check_names=False)
+
+    def test_ruler_bands_follow_target_shares(self) -> None:
+        config = replace(
+            self.config,
+            target_shares={"BEAR": 0.20, "RANGE": 0.65, "BULL": 0.15},
+        )
+        bear, bull = ruler_bands(config)
+        self.assertAlmostEqual(bear, -60.0)
+        self.assertAlmostEqual(bull, 70.0)
+        self.assertAlmostEqual(bear + 100.0, 40.0)
+        self.assertAlmostEqual(100.0 - bull, 30.0)
 
     def test_calibration_shares_and_suggestion(self) -> None:
         values = pd.Series(np.linspace(-100.0, 100.0, 401))

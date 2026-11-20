@@ -1,17 +1,58 @@
 {
   "indices": [
-    {"code": "000016", "name": "上证50", "prefix": "sh", "group": "large_value"},
-    {"code": "000300", "name": "沪深300", "prefix": "sh", "group": "large_value"},
-    {"code": "000905", "name": "中证500", "prefix": "sh", "group": "mid500"},
-    {"code": "399006", "name": "创业板指", "prefix": "sz", "group": "growth"},
-    {"code": "000688", "name": "科创50", "prefix": "sh", "group": "growth"}
+    {
+      "code": "000016",
+      "name": "上证50",
+      "prefix": "sh",
+      "group": "large_value"
+    },
+    {
+      "code": "000300",
+      "name": "沪深300",
+      "prefix": "sh",
+      "group": "large_value"
+    },
+    {
+      "code": "000905",
+      "name": "中证500",
+      "prefix": "sh",
+      "group": "mid500"
+    },
+    {
+      "code": "399006",
+      "name": "创业板指",
+      "prefix": "sz",
+      "group": "growth"
+    },
+    {
+      "code": "000688",
+      "name": "科创50",
+      "prefix": "sh",
+      "group": "growth"
+    }
   ],
-  "weights": {"f1": 0.5, "f2": 0.3, "f3": 0.2},
-  "group_weights": {"large_value": 0.4, "mid500": 0.2, "growth": 0.4},
+  "weights": {
+    "f1": 0.5,
+    "f2": 0.3,
+    "f3": 0.2
+  },
+  "group_weights": {
+    "large_value": 0.4,
+    "mid500": 0.2,
+    "growth": 0.4
+  },
   "groups": {
-    "large_value": ["000016", "000300"],
-    "mid500": ["000905"],
-    "growth": ["399006", "000688"]
+    "large_value": [
+      "000016",
+      "000300"
+    ],
+    "mid500": [
+      "000905"
+    ],
+    "growth": [
+      "399006",
+      "000688"
+    ]
   },
   "windows": {
     "ma_short": 60,
@@ -21,20 +62,40 @@
     "percentile": 1250
   },
   "thresholds": {
-    "index": {"bear": -43, "bull": 26},
-    "composite": {"bear": -26, "bull": 16},
-    "large_value": {"bear": -39, "bull": 26},
-    "mid500": {"bear": -49, "bull": 26},
-    "growth": {"bear": -41, "bull": 21}
+    "index": {
+      "bear": -55.0,
+      "bull": 49.0
+    },
+    "composite": {
+      "bear": -33.0,
+      "bull": 47.0
+    },
+    "large_value": {
+      "bear": -55.0,
+      "bull": 42.0
+    },
+    "mid500": {
+      "bear": -60.0,
+      "bull": 52.0
+    },
+    "growth": {
+      "bear": -52.0,
+      "bull": 52.0
+    }
   },
   "breadth_multiplier": 0.3,
+  "target_shares": {
+    "BEAR": 0.2,
+    "RANGE": 0.65,
+    "BULL": 0.15
+  },
   "smoothing": {
     "ema_enabled": false,
     "ema_days": 5,
     "confirm_days": 0
   },
   "start_date": "20160101",
-  "cache_dir": "data/regime",
-  "history_path": "data/regime/bull_bear_history.csv",
-  "latest_path": "data/regime/bull_bear_latest.json"
+  "cache_dir": "data\\regime",
+  "history_path": "data\\regime\\bull_bear_history.csv",
+  "latest_path": "data\\regime\\bull_bear_latest.json"
 }

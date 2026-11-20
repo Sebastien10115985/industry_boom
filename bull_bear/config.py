@@ -52,6 +52,9 @@ class RegimeConfig:
         }
     )
     breadth_multiplier: float = 0.3
+    target_shares: dict[str, float] = field(
+        default_factory=lambda: {"BEAR": 0.20, "RANGE": 0.65, "BULL": 0.15}
+    )
     smoothing: dict[str, Any] = field(
         default_factory=lambda: {"ema_enabled": False, "ema_days": 5, "confirm_days": 0}
     )
@@ -76,6 +79,8 @@ class RegimeConfig:
             raise ValueError("三因子权重之和必须为 1")
         if abs(sum(self.group_weights.values()) - 1.0) > 1e-6:
             raise ValueError("分组权重之和必须为 1")
+        if abs(sum(self.target_shares.values()) - 1.0) > 1e-6:
+            raise ValueError("三态目标占比之和必须为 1")
         codes = [item["code"] for item in self.indices]
         if len(set(codes)) != len(self.indices):
             raise ValueError("指数代码重复")
@@ -105,6 +110,7 @@ class RegimeConfig:
             "windows": dict(self.windows),
             "thresholds": {key: dict(value) for key, value in self.thresholds.items()},
             "breadth_multiplier": self.breadth_multiplier,
+            "target_shares": dict(self.target_shares),
             "smoothing": dict(self.smoothing),
             "start_date": self.start_date,
             "cache_dir": str(self.cache_dir.relative_to(PROJECT_DIR)),
@@ -116,6 +122,13 @@ class RegimeConfig:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ruler_bands(config: RegimeConfig) -> tuple[float, float]:
+    """按三态目标占比划分 -100~100 卡尺：左侧熊市、右侧牛市，中间震荡。"""
+    bear_width = 200.0 * float(config.target_shares["BEAR"])
+    bull_width = 200.0 * float(config.target_shares["BULL"])
+    return -100.0 + bear_width, 100.0 - bull_width
 
 
 def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> RegimeConfig:
