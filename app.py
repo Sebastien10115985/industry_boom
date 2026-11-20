@@ -83,7 +83,9 @@ from macro_risk import (
     new_session_id,
     vote_risk,
 )
-from regime_provider import compute_regime
+from bull_bear.config import load_config as load_regime_config
+from bull_bear.scoring import STATE_LABELS
+from regime_provider import compute_full_report
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1704,68 +1706,160 @@ risk_tab, watch_tab, prosperity_tab, detail_tab, customs_tab, liquidity_tab, qua
 )
 
 with risk_tab:
-    # ---- 市场状态游标卡尺（后台算法自动计算，页面只读） ----
-    def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
-        return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
+    st.subheader("A股牛熊状态评分")
+    refresh_regime = bool(st.session_state.pop("regime_refresh", False))
+    try:
+        with st.spinner("正在更新五指数日线并重新计算..." if refresh_regime else "正在计算牛熊状态..."):
+            regime_report = compute_full_report(force_refresh=refresh_regime)
+    except Exception as exc:
+        st.error(f"牛熊状态评分计算失败：{exc}")
+        regime_report = None
 
-    regime_value = compute_regime()
-    ruler_rows = []
-    for x0 in range(-100, 100):
-        mid = x0 + 0.5
-        if mid <= -20:
-            t = min(1.0, max(0.0, (-20 - mid) / 80))
-            color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
-        elif mid >= 20:
-            t = min(1.0, max(0.0, (mid - 20) / 80))
-            color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
-        else:
-            color = "#c2c2c2"
-        ruler_rows.append({"x0": x0, "x1": x0 + 1, "y0": 0.7, "y1": 1.7, "色": color})
-    ruler_frame = pd.DataFrame(ruler_rows)
-    regime_base = alt.Chart(ruler_frame).encode(
-        x=alt.X(
-            "x0:Q",
-            title=None,
-            scale=alt.Scale(domain=[-100, 100]),
-            axis=alt.Axis(values=[-100, -20, 0, 20, 100]),
-        ),
-    )
-    regime_ruler = regime_base.mark_rect().encode(
-        x2="x1:Q",
-        y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
-        y2="y1:Q",
-        color=alt.Color("色:N", scale=None, legend=None),
-    )
-    regime_notes = (
-        alt.Chart(
-            pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.3, 0.3, 0.3]})
+    if regime_report is not None:
+        latest = regime_report["latest"]
+        regime_value = float(latest["score"])
+        regime_state = str(latest["state"])
+        bounds = load_regime_config().thresholds["composite"]
+        bear_line = float(bounds["bear"])
+        bull_line = float(bounds["bull"])
+
+        metric_cols = st.columns(5)
+        metric_cols[0].metric("综合分", f"{regime_value:.1f}")
+        metric_cols[1].metric("状态", STATE_LABELS.get(regime_state, regime_state))
+        metric_cols[2].metric("广度", f"{float(latest['breadth']) * 100:.0f}%")
+        metric_cols[3].metric("大盘价值", f"{float(latest['groups'].get('large_value', {}).get('score', 0)):.1f}")
+        metric_cols[4].metric("成长", f"{float(latest['groups'].get('growth', {}).get('score', 0)):.1f}")
+        st.caption(
+            f"数据截至 {latest['date']}：上证50、沪深300、中证500、创业板指、科创50；"
+            "三因子按1250日滚动分位标准化，广度以乘法调节置信度。状态基于量化信号。"
         )
-        .mark_text(dy=0, fontSize=15, fontWeight=600, color="#000000")
-        .encode(
-            x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])),
-            y=alt.Y("note_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
-            text=alt.Text("注释:N"),
+
+        # ---- 市场状态游标卡尺（后台算法自动计算，页面只读） ----
+        def _lerp_hex(c1: tuple, c2: tuple, t: float) -> str:
+            return "#%02x%02x%02x" % tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))
+
+        ruler_rows = []
+        for x0 in range(-100, 100):
+            mid = x0 + 0.5
+            if mid <= bear_line:
+                t = min(1.0, max(0.0, (bear_line - mid) / (bear_line + 100)))
+                color = _lerp_hex((134, 201, 138), (13, 90, 24), t)
+            elif mid >= bull_line:
+                t = min(1.0, max(0.0, (mid - bull_line) / (100 - bull_line)))
+                color = _lerp_hex((229, 139, 125), (126, 21, 11), t)
+            else:
+                color = "#c2c2c2"
+            ruler_rows.append({"x0": x0, "x1": x0 + 1, "y0": 0.7, "y1": 1.7, "色": color})
+        ruler_frame = pd.DataFrame(ruler_rows)
+        regime_base = alt.Chart(ruler_frame).encode(
+            x=alt.X(
+                "x0:Q",
+                title=None,
+                scale=alt.Scale(domain=[-100, 100]),
+                axis=alt.Axis(values=[-100, int(bear_line), 0, int(bull_line), 100]),
+            ),
         )
-    )
-    regime_cursor = (
-        alt.Chart(pd.DataFrame({"游标": [regime_value]}))
-        .mark_rule(color="#1f2937", size=3)
-        .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])))
-    )
-    regime_label = (
-        alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"], "label_y": [1.92]}))
-        .mark_text(dy=-6, fontSize=13, fontWeight=700, color="#1f2937")
-        .encode(
-            x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])),
-            y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
-            text=alt.Text("标签:N"),
+        regime_ruler = regime_base.mark_rect().encode(
+            x2="x1:Q",
+            y=alt.Y("y0:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+            y2="y1:Q",
+            color=alt.Color("色:N", scale=None, legend=None),
         )
-    )
-    regime_chart = (
-        regime_ruler + regime_notes + regime_cursor + regime_label
-    ).properties(width="container", height=150).configure(background="white")
-    st.altair_chart(regime_chart, width="stretch")
-    st.caption("当前市场状态由后台算法自动计算，页面只读。")
+        regime_notes = (
+            alt.Chart(
+                pd.DataFrame({"刻度": [-60, 0, 60], "注释": ["熊市", "震荡市", "牛市"], "note_y": [0.3, 0.3, 0.3]})
+            )
+            .mark_text(dy=0, fontSize=15, fontWeight=600, color="#000000")
+            .encode(
+                x=alt.X("刻度:Q", scale=alt.Scale(domain=[-100, 100])),
+                y=alt.Y("note_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+                text=alt.Text("注释:N"),
+            )
+        )
+        regime_cursor = (
+            alt.Chart(pd.DataFrame({"游标": [regime_value]}))
+            .mark_rule(color="#1f2937", size=3)
+            .encode(x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])))
+        )
+        regime_label = (
+            alt.Chart(pd.DataFrame({"游标": [regime_value], "标签": [f"{regime_value:.0f}"], "label_y": [1.92]}))
+            .mark_text(dy=-6, fontSize=13, fontWeight=700, color="#1f2937")
+            .encode(
+                x=alt.X("游标:Q", scale=alt.Scale(domain=[-100, 100])),
+                y=alt.Y("label_y:Q", axis=None, scale=alt.Scale(domain=[0, 2.0])),
+                text=alt.Text("标签:N"),
+            )
+        )
+        regime_chart = (
+            regime_ruler + regime_notes + regime_cursor + regime_label
+        ).properties(width="container", height=150).configure(background="white")
+        st.altair_chart(regime_chart, width="stretch")
+
+        action_cols = st.columns([1, 4])
+        if action_cols[0].button("更新五指数日线", key="regime_refresh_btn", type="primary"):
+            st.session_state["regime_refresh"] = True
+            st.rerun()
+        if latest["warnings"]:
+            action_cols[1].warning("；".join(latest["warnings"][:3]))
+
+        with st.expander("当日五指数明细", expanded=True):
+            st.dataframe(regime_report["table"], width="stretch", hide_index=True)
+        with st.expander("分组状态", expanded=False):
+            group_rows = [
+                {
+                    "分组": item["label"],
+                    "分值": item["score"],
+                    "状态": item["state_label"],
+                }
+                for item in latest["groups"].values()
+            ]
+            st.dataframe(pd.DataFrame(group_rows), width="stretch", hide_index=True)
+        with st.expander("历史综合分曲线", expanded=False):
+            history = regime_report["composite"][["date", "score", "state"]].copy()
+            history["state"] = history["state"].map(STATE_LABELS).fillna(history["state"])
+            line = alt.Chart(history).mark_line(color="#1d4ed8", strokeWidth=1.5).encode(
+                x=alt.X("date:T", title=None),
+                y=alt.Y("score:Q", title="综合分", scale=alt.Scale(domain=[-100, 100])),
+            )
+            points = alt.Chart(history.iloc[::20]).mark_circle(size=18).encode(
+                x=alt.X("date:T", title=None),
+                y=alt.Y("score:Q", scale=alt.Scale(domain=[-100, 100])),
+                color=alt.Color(
+                    "state:N",
+                    title="状态",
+                    scale=alt.Scale(
+                        domain=["熊市", "震荡市", "牛市"],
+                        range=["#16a34a", "#9ca3af", "#dc2626"],
+                    ),
+                ),
+            )
+            rules = alt.Chart(pd.DataFrame({"y": [bear_line, bull_line]})).mark_rule(
+                color="#6b7280", strokeDash=[4, 3]
+            ).encode(y="y:Q")
+            st.altair_chart((line + points + rules).properties(height=240, width="container"), width="stretch")
+        with st.expander("阈值校准与回测摘要", expanded=False):
+            calibration_rows = []
+            for name, item in regime_report["calibration"].items():
+                shares = item["shares"]
+                suggestion = item["suggested"]
+                wf_shares = item.get("walk_forward", {}).get("shares", {})
+                calibration_rows.append(
+                    {
+                        "序列": name,
+                        "熊市": f"{shares.get('BEAR', 0):.0%}",
+                        "震荡": f"{shares.get('RANGE', 0):.0%}",
+                        "牛市": f"{shares.get('BULL', 0):.0%}",
+                        "切换次数": item["switches"],
+                        "建议阈值": f"{suggestion['bear']:.0f} / {suggestion['bull']:.0f}",
+                        "样本外熊/震/牛": "/".join(
+                            f"{wf_shares.get(key, 0):.0%}" for key in ("BEAR", "RANGE", "BULL")
+                        ),
+                    }
+                )
+            st.dataframe(pd.DataFrame(calibration_rows), width="stretch", hide_index=True)
+            st.caption(
+                "目标：牛市与熊市各 20~35%、震荡 40~60%；建议阈值由完整历史网格搜索得到，样本外复核按 70/30 切分。"
+            )
     st.divider()
 
     st.caption(

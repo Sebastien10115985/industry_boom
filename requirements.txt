@@ -13,3 +13,5 @@ requests==2.32.5
 pypdf==6.1.3
 # 海关月报 XLS 回填工具（tools/import_customs_html_dir.py）读取 .xls 用
 xlrd==2.0.2
+# A股牛熊状态评分：五个宽基指数日线数据源
+akshare==1.20.25
