@@ -19,7 +19,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_TOOLS_DIR.parent))
+sys.path.insert(0, str(_TOOLS_DIR))
 
 import pandas as pd
 
@@ -169,14 +171,14 @@ def parse_cn_table(html: str) -> dict[str, tuple[str, float, float, float]]:
     table = [cells for cells in table if cells]
 
     unit_scale = 1.0
-    for cells in table:
+    for cells in table[:8]:
         joined = "|".join(cells)
-        if "金额单位" in joined:
-            if "万元人民币" in joined:
-                unit_scale = 10000.0
-            elif "万美元" in joined or "美元" in joined:
-                raise CustomsError("这是美元值表；请下载「人民币值」表，避免与本地库人民币口径混淆")
+        # 中文站既有「金额单位：万元人民币」，也有「单位：万元人民币」版式
+        if "万元人民币" in joined:
+            unit_scale = 10000.0
             break
+        if "万美元" in joined or ("单位" in joined and "美元" in joined):
+            raise CustomsError("这是美元值表；请下载「人民币值」表，避免与本地库人民币口径混淆")
 
     month_col, cum_col, yoy_col = 3, 5, 9
     for cells in table:

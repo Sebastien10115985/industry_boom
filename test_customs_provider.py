@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from customs_provider import (
     CustomsError,
@@ -10,6 +12,7 @@ from customs_provider import (
     month_from_exports_title,
     parse_major_exports,
 )
+from tools.import_customs_html_dir import parse_cn_table
 
 ARTICLE_HTML = """
 <html><head><title>(5) China's Major Exports by Quantity and Value, Oct 2026 (in CNY)</title></head>
@@ -118,9 +121,12 @@ class MergeAndImportTests(unittest.TestCase):
     def test_import_article_roundtrip(self):
         import pandas as pd
 
-        frame = import_customs_article(ARTICLE_HTML, path="data/_tmp_customs_test.csv")
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = Path(temp_dir.name) / "customs.csv"
+        frame = import_customs_article(ARTICLE_HTML, path=path)
         self.assertTrue((frame["month"] == "2026-10").all())
-        loaded = load_customs("data/_tmp_customs_test.csv")
+        loaded = load_customs(path)
         self.assertFalse(loaded.empty)
         self.assertIn("集成电路", set(loaded[loaded["month"] == "2026-10"]["commodity_cn"]))
         pd.testing.assert_frame_equal(
@@ -129,11 +135,37 @@ class MergeAndImportTests(unittest.TestCase):
         )
 
     def test_import_bad_article_raises_and_keeps_store(self):
-        before = load_customs("data/_tmp_customs_test.csv")
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        path = Path(temp_dir.name) / "customs.csv"
+        before = load_customs(path)
         with self.assertRaises(CustomsError):
-            import_customs_article("<html>no table</html>", path="data/_tmp_customs_test.csv")
-        after = load_customs("data/_tmp_customs_test.csv")
+            import_customs_article("<html>no table</html>", path=path)
+        after = load_customs(path)
         self.assertTrue(before.equals(after))
+
+
+class ChineseTableUnitTests(unittest.TestCase):
+    TABLE = """
+    <table>
+    <tr><td>单位：万元人民币</td></tr>
+    <tr><td>商品名称</td><td>计量单位</td><td>7月</td><td>1至7月累计</td></tr>
+    <tr><td>数量</td><td>金额</td><td>数量</td><td>金额</td><td>数量</td><td>金额</td><td>数量</td><td>金额</td><td>数量</td><td>金额</td></tr>
+    <tr><td>稀土</td><td>吨</td><td>1</td><td>275,141</td><td>2</td><td>1,434,640</td><td>3</td><td>4</td><td>5</td><td>-4.7</td></tr>
+    </table>
+    """
+
+    def test_unit_in_renminbi_wanyuan_row_is_scaled(self):
+        matched = parse_cn_table(self.TABLE)
+        _, month_value, cum_value, yoy = matched["稀土"]
+        self.assertAlmostEqual(month_value, 27.5141, places=4)
+        self.assertAlmostEqual(cum_value, 143.464, places=4)
+        self.assertAlmostEqual(yoy, -4.7, places=4)
+
+    def test_usd_table_is_rejected(self):
+        html = self.TABLE.replace("单位：万元人民币", "金额单位：万美元")
+        with self.assertRaises(CustomsError):
+            parse_cn_table(html)
 
 
 if __name__ == "__main__":
