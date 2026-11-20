@@ -63,30 +63,30 @@
   },
   "thresholds": {
     "index": {
-      "bear": -55.0,
+      "bear": -32.0,
       "bull": 49.0
     },
     "composite": {
-      "bear": -33.0,
+      "bear": -21.0,
       "bull": 47.0
     },
     "large_value": {
-      "bear": -55.0,
+      "bear": -27.0,
       "bull": 42.0
     },
     "mid500": {
-      "bear": -60.0,
-      "bull": 52.0
+      "bear": -36.0,
+      "bull": 51.0
     },
     "growth": {
-      "bear": -52.0,
-      "bull": 52.0
+      "bear": -29.0,
+      "bull": 53.0
     }
   },
   "breadth_multiplier": 0.3,
   "target_shares": {
-    "BEAR": 0.2,
-    "RANGE": 0.65,
+    "BEAR": 0.35,
+    "RANGE": 0.5,
     "BULL": 0.15
   },
   "smoothing": {
