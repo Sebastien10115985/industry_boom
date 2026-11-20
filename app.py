@@ -101,7 +101,7 @@ from prosperity_mapping import mapped_industry_ids
 from ranking import MODEL_SPECS, model_weight_table, prepare_growth_metrics, score_snapshot, select_snapshot
 from sw_constituents import SNAPSHOT_DATE, constituents_for, industry_coverage
 
-st.set_page_config(page_title="万得三级行业观察库", page_icon=None, layout="wide")
+st.set_page_config(page_title="宏观与行业景气动态观察看板", page_icon=None, layout="wide")
 st.markdown(
     """
     <style>
@@ -708,8 +708,8 @@ def _wechat_qr_overlay_html() -> str:
 
 _title_col, _ad_col = st.columns([5, 1], vertical_alignment="center")
 with _title_col:
-    st.title("万得三级行业动态观察库")
-    st.caption("按公告日生成点时排名；默认每个万得三级行业取前 20 名。")
+    st.title("宏观与行业景气动态观察看板")
+    st.caption("A 股牛熊估算｜行业景气度｜海关进出口｜市场流动性跟踪")
     st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
 with _ad_col:
     st.markdown(_ad_card_html(), unsafe_allow_html=True)
@@ -3319,6 +3319,7 @@ with detail_tab:
                     f"{industry_raw['company_id'].nunique()} 家公司，"
                     f"最新公告日 {latest_announcement:%Y-%m-%d}。"
                 )
+                st.caption(f"排名按公告日生成点时计算，默认每个三级行业取前 {top_n} 名。")
                 period_options = available_report_periods(industry_raw, detail_as_of)
                 period_choice = st.selectbox(
                     "报告期",
