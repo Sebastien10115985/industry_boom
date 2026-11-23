@@ -71,7 +71,8 @@ def default_fetcher(code: str, start_date: str, end_date: str | None = None) -> 
             end_date=end,
         )
     except Exception as exc:
-        raise IndexDataError(f"{code} 行情拉取失败：{exc}") from exc
+        # 只保留原因，代码与中文注释由 load_prices 统一添加，避免重复前缀
+        raise IndexDataError(str(exc)) from exc
     return _normalise(frame, code)
 
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +22,13 @@ from bull_bear import (
     load_config,
     load_prices,
 )
+from bull_bear.config import PROJECT_DIR
 from bull_bear.report import LATEST_COLUMNS, build_report
 from macro_risk import load_regime, save_regime
 
 DEFAULT_REGIME = -80.0
+# 随代码分发的只读缓存副本：部署环境 data/ 被清空时用它恢复，避免首次启动联网失败
+BUNDLED_DIR = Path(__file__).resolve().parent / "bundled_data" / "regime"
 
 
 def _persist(value: float) -> None:
@@ -37,14 +41,36 @@ def _persist(value: float) -> None:
         pass
 
 
-def load_cached_report(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any] | None:
-    """从磁盘读取已算好的牛熊估算结果，页面打开时不做任何计算。"""
-    config = load_config(config_path)
-    if not config.latest_path.exists() or not config.history_path.exists():
-        return None
+def _restore_cache_from_bundled(config: Any) -> None:
+    """部署环境 data/regime 为空时，从随代码分发的副本恢复缓存（尽力而为）。"""
+    # 测试用的临时路径不参与恢复，避免污染测试预期
+    if PROJECT_DIR not in config.cache_dir.parents:
+        return
     try:
-        latest = json.loads(config.latest_path.read_text(encoding="utf-8"))
-        history = pd.read_csv(config.history_path, dtype={"date": str}, encoding="utf-8-sig")
+        config.cache_dir.mkdir(parents=True, exist_ok=True)
+        for source in BUNDLED_DIR.glob("*.csv"):
+            if len(source.stem) != 6 or not source.stem.isdigit():
+                continue
+            target = config.cache_dir / source.name
+            if not target.exists():
+                shutil.copy2(source, target)
+        for name, attribute in (
+            ("bull_bear_latest.json", "latest_path"),
+            ("bull_bear_history.csv", "history_path"),
+        ):
+            source = BUNDLED_DIR / name
+            target = getattr(config, attribute)
+            if source.exists() and not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+    except Exception:
+        pass
+
+
+def _read_report_from(latest_path: Path, history_path: Path) -> dict[str, Any] | None:
+    try:
+        latest = json.loads(Path(latest_path).read_text(encoding="utf-8"))
+        history = pd.read_csv(history_path, dtype={"date": str}, encoding="utf-8-sig")
         history["date"] = pd.to_datetime(history["date"], errors="coerce")
         history = history.dropna(subset=["date"])
         if "score" not in history.columns and "S" in history.columns:
@@ -61,12 +87,26 @@ def load_cached_report(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict[st
         return None
 
 
+def load_cached_report(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any] | None:
+    """从磁盘读取已算好的牛熊估算结果，页面打开时不做任何计算。"""
+    config = load_config(config_path)
+    _restore_cache_from_bundled(config)
+    report = _read_report_from(config.latest_path, config.history_path)
+    if report is not None:
+        return report
+    return _read_report_from(
+        BUNDLED_DIR / "bull_bear_latest.json",
+        BUNDLED_DIR / "bull_bear_history.csv",
+    )
+
+
 def compute_full_report(
     force_refresh: bool = False,
     config_path: str | Path = DEFAULT_CONFIG_PATH,
 ) -> dict[str, Any]:
     """拉取/读取指数数据，完整计算并返回结果表、历史序列与校准摘要。"""
     config = load_config(config_path)
+    _restore_cache_from_bundled(config)
     bundle = load_prices(config, force_refresh=force_refresh)
     factors = compute_factors(bundle, config)
     scores = compute_index_scores(factors, config)

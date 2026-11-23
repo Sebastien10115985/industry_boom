@@ -28,7 +28,11 @@ from bull_bear import (  # noqa: E402
     ruler_bands,
     state_of,
 )
-from regime_provider import compute_or_cached_report, load_cached_report  # noqa: E402
+from regime_provider import (  # noqa: E402
+    _restore_cache_from_bundled,
+    compute_or_cached_report,
+    load_cached_report,
+)
 
 
 def _price_frame(count: int, offset: float = 0.0) -> pd.DataFrame:
@@ -214,8 +218,7 @@ class BullBearAlgorithmTests(unittest.TestCase):
         payload["history_path"] = str(history_path)
         config_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-        self.assertIsNone(load_cached_report(config_path))
-
+        # 缓存缺失时会回退到随代码分发的副本；下面写入自定义结果覆盖它
         latest_path.write_text(json.dumps({"score": 12.3, "indices": []}), encoding="utf-8")
         pd.DataFrame(
             {"date": ["2026-01-05", "2026-01-06"], "S": [10.0, 12.3], "state": ["震荡市", "震荡市"]}
@@ -256,6 +259,31 @@ class BullBearAlgorithmTests(unittest.TestCase):
         self.assertIn("fallback_reason", report)
         self.assertIn("`000016`（上证50）", report["fallback_reason"])
         self.assertIn("改用已缓存的上次估算结果", report["latest"]["warnings"][0])
+
+    def test_bundled_cache_restores_empty_data_dir(self) -> None:
+        temp_dir = TemporaryDirectory(dir=str(Path(__file__).resolve().parent))
+        self.addCleanup(temp_dir.cleanup)
+        base = Path(temp_dir.name)
+        config = replace(
+            self.config,
+            cache_dir=base / "regime",
+            latest_path=base / "latest.json",
+            history_path=base / "history.csv",
+        )
+        _restore_cache_from_bundled(config)
+        self.assertTrue((config.cache_dir / "000016.csv").exists())
+        self.assertTrue(config.latest_path.exists())
+        self.assertTrue(config.history_path.exists())
+        self.assertIsNotNone(load_cached_report(self._write_config_with_paths(base)))
+
+    def _write_config_with_paths(self, base: Path) -> Path:
+        payload = self.config.to_dict()
+        payload["cache_dir"] = str(base / "regime")
+        payload["latest_path"] = str(base / "latest.json")
+        payload["history_path"] = str(base / "history.csv")
+        path = base / "config.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return path
 
 
 if __name__ == "__main__":
