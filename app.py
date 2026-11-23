@@ -1112,7 +1112,7 @@ def _render_company_trend_chart(history: pd.DataFrame, company_id: str, label: s
         return
     st.markdown(f"**历史趋势：{label}**")
     periods = sorted(long["报告期"].dt.strftime("%Y-%m-%d").unique())
-    st.caption("点击表格中任意一行，可切换查看该公司近 " + str(len(periods)) + " 个报告期（" + "、".join(periods) + "）的五项指标走势。")
+    st.caption("选中表格行或使用「查看大图」下拉框，可切换查看该公司近 " + str(len(periods)) + " 个报告期（" + "、".join(periods) + "）的五项指标走势。")
     chart = (
         alt.Chart(long)
         .mark_line(point=True)
@@ -1132,6 +1132,80 @@ def _render_company_trend_chart(history: pd.DataFrame, company_id: str, label: s
         .configure_view(stroke=None)
     )
     st.altair_chart(chart, width="stretch")
+
+
+_COMPANY_PICK_PLACEHOLDER = "（请选择公司查看大图）"
+
+
+def _company_pick_label(company_id: str, company_name: str) -> str:
+    if display_mode == "normal":
+        return f"{company_name}（{company_id}）"
+    return str(company_name)
+
+
+def _resolve_company_trend_selection(
+    shown: pd.DataFrame,
+    source: pd.DataFrame,
+    event,
+    picker_key: str,
+) -> tuple[str, str] | None:
+    """合并表格行选择与「查看大图」下拉框，返回 (company_id, 展示名)。"""
+    if source is None or source.empty or "company_id" not in source.columns:
+        return None
+    names = source["company_name"] if "company_name" in source.columns else source["company_id"]
+    labels: dict[str, str] = {}
+    for company_id, company_name in zip(source["company_id"].astype(str), names.astype(str)):
+        labels.setdefault(_company_pick_label(company_id, company_name), company_id)
+    if not labels:
+        return None
+
+    options = [_COMPANY_PICK_PLACEHOLDER, *labels]
+    if st.session_state.get(picker_key) not in options:
+        st.session_state[picker_key] = _COMPANY_PICK_PLACEHOLDER
+    current_pick = str(st.session_state.get(picker_key))
+
+    selected_rows = list(getattr(event, "selection", {}).get("rows", []))
+    row_id: str | None = None
+    row_label: str | None = None
+    if selected_rows:
+        position = int(selected_rows[0])
+        if 0 <= position < len(shown.index):
+            index = shown.index[position]
+            if index in source.index:
+                row_id = str(source.loc[index, "company_id"])
+                name = str(source.loc[index, "company_name"]) if "company_name" in source.columns else row_id
+                row_label = _company_pick_label(row_id, name)
+
+    last_row_key = f"{picker_key}_last_row"
+    last_pick_key = f"{picker_key}_last_pick"
+    last_row = st.session_state.get(last_row_key)
+    last_pick = st.session_state.get(last_pick_key, _COMPANY_PICK_PLACEHOLDER)
+    row_changed = row_id != last_row
+    pick_changed = current_pick != last_pick
+
+    if row_changed:
+        chosen_id = row_id
+        chosen_label = row_label
+        st.session_state[picker_key] = chosen_label if chosen_label in labels else _COMPANY_PICK_PLACEHOLDER
+    elif pick_changed:
+        chosen_id = labels.get(current_pick)
+        chosen_label = current_pick if chosen_id else None
+    else:
+        chosen_id = labels.get(current_pick)
+        chosen_label = current_pick if chosen_id else None
+        if not chosen_id and row_id:
+            chosen_id = row_id
+            chosen_label = row_label
+            if row_label in labels:
+                st.session_state[picker_key] = row_label
+
+    st.session_state[last_row_key] = row_id
+    st.session_state[last_pick_key] = st.session_state.get(picker_key, _COMPANY_PICK_PLACEHOLDER)
+
+    st.selectbox("查看大图", options, key=picker_key)
+    if not chosen_id:
+        return None
+    return chosen_id, str(chosen_label or chosen_id)
 
 
 def _grey_low_payers(shown: pd.DataFrame, group: pd.DataFrame):
@@ -1200,15 +1274,14 @@ def render_industry_group(
             selection_mode="single-row",
             key=f"company_trend_{industry_key}",
         )
-        selected_rows = list(getattr(event, "selection", {}).get("rows", []))
-        if selected_rows:
-            row = table.iloc[selected_rows[0]]
-            company_id = str(group.loc[table.index[selected_rows[0]], "company_id"])
-            _render_company_trend_chart(
-                all_industry_financials, company_id, str(row.get("公司名称", company_id))
-            )
+        company_pick = _resolve_company_trend_selection(
+            table, group, event, f"company_pick_{industry_key}"
+        )
+        if company_pick:
+            company_id, company_label = company_pick
+            _render_company_trend_chart(all_industry_financials, company_id, company_label)
         else:
-            st.caption("提示：点击表格行首复选框，下方展示该公司营收、净利润、增长率、毛利率的历史趋势曲线。")
+            st.caption("提示：点击表格行首复选框，或使用上方「查看大图」下拉框，查看历史趋势曲线。")
         if _low_return_grey_mask(group, group.index).any():
             st.caption("灰色行：上市满 10 年且分红融资比低于 1，累计分红仍低于历史融资总额。")
         low_confidence = group[
@@ -1970,13 +2043,14 @@ with watch_tab:
         selection_mode="single-row",
         key="watch_company_trend",
     )
-    watch_rows = list(getattr(watch_event, "selection", {}).get("rows", []))
-    if watch_rows:
-        row = watch_table.iloc[watch_rows[0]]
-        company_id = str(shown_watchlist.loc[watch_table.index[watch_rows[0]], "company_id"])
-        _render_company_trend_chart(
-            all_industry_financials, company_id, str(row.get("公司名称", company_id))
-        )
+    watch_company_pick = _resolve_company_trend_selection(
+        watch_table, shown_watchlist, watch_event, "watch_company_pick"
+    )
+    if watch_company_pick:
+        company_id, company_label = watch_company_pick
+        _render_company_trend_chart(all_industry_financials, company_id, company_label)
+    else:
+        st.caption("提示：点击表格行首复选框，或使用上方「查看大图」下拉框，查看历史趋势曲线。")
     excel_bytes = dataframe_to_excel_bytes(ranking, watchlist, model_weight_table())
     st.download_button(
         "下载本期观察库与完整排名",
