@@ -1,0 +1,3 @@
+[browser]
+# 关闭 Streamlit 浏览器端匿名使用统计，减少前端对外的遥测请求
+gatherUsageStats = false
