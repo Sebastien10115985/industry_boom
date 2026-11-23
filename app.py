@@ -85,7 +85,7 @@ from macro_risk import (
 )
 from bull_bear.config import load_config as load_regime_config, ruler_bands
 from bull_bear.scoring import STATE_LABELS
-from regime_provider import compute_full_report, load_cached_report
+from regime_provider import compute_or_cached_report, load_cached_report
 from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
@@ -1711,12 +1711,12 @@ with risk_tab:
     try:
         if refresh_regime:
             with st.spinner("正在更新五指数日线并重新估算..."):
-                regime_report = compute_full_report(force_refresh=True)
+                regime_report = compute_or_cached_report(force_refresh=True)
         else:
             regime_report = load_cached_report()
             if regime_report is None:
                 with st.spinner("首次估算中，结果将写入缓存..."):
-                    regime_report = compute_full_report()
+                    regime_report = compute_or_cached_report()
     except Exception as exc:
         st.error(f"牛熊估算失败：{exc}")
         regime_report = None

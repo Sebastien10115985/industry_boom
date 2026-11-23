@@ -143,8 +143,8 @@ def load_prices(
 ) -> PriceBundle:
     """读取（或拉取）五个指数，取交易日交集并前向填充，返回对齐后的价格。
 
-    force_refresh 为 True 时忽略缓存；任一指数拉取失败即抛出 IndexDataError，
-    不会用旧数据静默代替。
+    force_refresh 为 True 时优先重新拉取；若行情服务器限流/节假日无数据导致拉取失败，
+    且本地已有该指数缓存，则改用历史缓存并在 warnings 中说明；只有本地也没有缓存时才抛错。
     """
     fetch = fetcher or default_fetcher
     warnings: list[str] = []
@@ -160,12 +160,15 @@ def load_prices(
         if not force_refresh and path.exists():
             raw[code] = _read_cache(path, code)
             continue
+        label = f"`{code}`（{config.name_of(code)}）"
         try:
             frame = fetch(code, config.start_date, end)
-        except IndexDataError:
-            raise
         except Exception as exc:
-            raise IndexDataError(f"{code} 行情拉取失败：{exc}") from exc
+            if path.exists():
+                raw[code] = _read_cache(path, code)
+                warnings.append(f"{label} 行情暂不可用，已使用本地历史缓存：{exc}")
+                continue
+            raise IndexDataError(f"{label} 行情拉取失败：{exc}") from exc
         raw[code] = _normalise(frame, code)
         _write_cache(path, raw[code])
         fetched.append(code)

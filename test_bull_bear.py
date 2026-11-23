@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from unittest.mock import patch
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,7 +28,7 @@ from bull_bear import (  # noqa: E402
     ruler_bands,
     state_of,
 )
-from regime_provider import load_cached_report  # noqa: E402
+from regime_provider import compute_or_cached_report, load_cached_report  # noqa: E402
 
 
 def _price_frame(count: int, offset: float = 0.0) -> pd.DataFrame:
@@ -167,8 +168,19 @@ class BullBearAlgorithmTests(unittest.TestCase):
         second = load_prices(config, force_refresh=False, fetcher=broken, check_names=False)
         self.assertEqual(len(second.prices), 5)
         self.assertEqual(second.fetched, [])
-        with self.assertRaises(IndexDataError):
-            load_prices(config, force_refresh=True, fetcher=broken, check_names=False)
+
+        third = load_prices(config, force_refresh=True, fetcher=broken, check_names=False)
+        self.assertEqual(len(third.prices), 5)
+        self.assertEqual(third.fetched, [])
+        self.assertTrue(
+            any("`000016`（上证50） 行情暂不可用，已使用本地历史缓存" in item for item in third.warnings)
+        )
+
+        empty_dir = Path(temp_dir.name) / "empty_regime"
+        empty_config = replace(config, cache_dir=empty_dir)
+        with self.assertRaises(IndexDataError) as context:
+            load_prices(empty_config, force_refresh=True, fetcher=broken, check_names=False)
+        self.assertIn("`000016`（上证50） 行情拉取失败", str(context.exception))
 
     def test_ruler_bands_follow_target_shares(self) -> None:
         config = replace(
@@ -216,6 +228,34 @@ class BullBearAlgorithmTests(unittest.TestCase):
         self.assertAlmostEqual(float(cached["latest"]["score"]), 12.3)
         self.assertEqual(len(cached["composite"]), 2)
         self.assertIn("score", cached["composite"].columns)
+
+    def test_compute_falls_back_to_cached_report(self) -> None:
+        temp_dir = TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        base = Path(temp_dir.name)
+        latest_path = base / "latest.json"
+        history_path = base / "history.csv"
+        config_path = base / "config.json"
+
+        payload = self.config.to_dict()
+        payload["latest_path"] = str(latest_path)
+        payload["history_path"] = str(history_path)
+        config_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        latest_path.write_text(json.dumps({"score": 12.3, "indices": []}), encoding="utf-8")
+        pd.DataFrame(
+            {"date": ["2026-01-05"], "S": [12.3], "state": ["震荡市"]}
+        ).to_csv(history_path, index=False, encoding="utf-8-sig")
+
+        with patch(
+            "regime_provider.compute_full_report",
+            side_effect=RuntimeError("`000016`（上证50）行情拉取失败：限流"),
+        ):
+            report = compute_or_cached_report(config_path=config_path)
+
+        self.assertTrue(report["cached"])
+        self.assertIn("fallback_reason", report)
+        self.assertIn("`000016`（上证50）", report["fallback_reason"])
+        self.assertIn("改用已缓存的上次估算结果", report["latest"]["warnings"][0])
 
 
 if __name__ == "__main__":

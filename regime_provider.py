@@ -77,6 +77,27 @@ def compute_full_report(
     return report
 
 
+def compute_or_cached_report(
+    force_refresh: bool = False,
+    config_path: str | Path = DEFAULT_CONFIG_PATH,
+) -> dict[str, Any]:
+    """计算牛熊估算；若行情不可用则回退到上次缓存结果，并在提示中说明。"""
+    try:
+        return compute_full_report(force_refresh=force_refresh, config_path=config_path)
+    except Exception as exc:
+        cached = load_cached_report(config_path)
+        if cached is None:
+            raise
+        reason = f"行情更新失败，改用已缓存的上次估算结果：{exc}"
+        cached["fallback_reason"] = reason
+        latest = cached.get("latest")
+        if isinstance(latest, dict):
+            notes = latest.setdefault("warnings", [])
+            if reason not in notes:
+                notes.insert(0, reason)
+        return cached
+
+
 def compute_regime(force_refresh: bool = False) -> float:
     """返回当前全市场综合分（-100 ~ 100）。"""
     return float(compute_full_report(force_refresh=force_refresh)["latest"]["score"])
