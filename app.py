@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 from datetime import date
+from html import escape
 from io import BytesIO
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
-from streamlit.components.v1 import html as components_html
 
 from financing_dividend_provider import attach_financing_dividend
 from data_io import (
@@ -145,8 +144,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
-
 # ---- 行业详情各 tab 的自定义评分权重 ----
 MODEL_WEIGHTS_FILE = Path(__file__).resolve().parent / "data" / "model_weights.json"
 MODEL_WEIGHT_SLIDER_MAX = 0.60
@@ -411,7 +408,8 @@ def _record_visit() -> dict[str, int]:
 DISCLAIMER_TEXT = (
     "本应用基于国家统计局公布的规模以上工业生产状况信息、海关统计月报、上市公司公开披露的财报，进行数据整理与可视化展示。\n"
     "相关数据存在发布延迟、缺失或统计口径差异，图表与排名不代表对未来走势的判断。仅供研究与学习交流之用。\n"
-    "不构成任何投资建议、收益承诺或买卖依据。股市风险大，投资需谨慎。收益和风险自担。"
+    "不构成任何投资建议、收益承诺或买卖依据。股市风险大，投资需谨慎。收益和风险自担。\n"
+    "本站点是宏观经济与行业数据观察工具，纯数据展示，无营销、无资金、无中奖领取、无诈骗内容。"
 )
 
 RISK_BANNER_HTML = (
@@ -547,174 +545,9 @@ def _demo_visible_labels(labels: list[str]) -> list[str]:
     return [column for column in labels if column not in hidden_labels]
 
 
-QR_STYLE = """<style>
-.dev-qr-wrap { display: flex; flex-direction: row; align-items: center;
-  justify-content: center; gap: 6px; }
-a.dev-qr-thumb-link { display: inline-block; line-height: 0; }
-img.dev-qr-thumb { width: 132px; border-radius: 6px; border: 1px solid #dcdfe4;
-  cursor: zoom-in; display: block; }
-.dev-qr-cap { writing-mode: vertical-rl; font-size: 12px; color: #6b7280;
-  letter-spacing: 3px; white-space: nowrap; }
-a.dev-qr-overlay { display: none; position: fixed; inset: 0; z-index: 999999;
-  background: rgba(0, 0, 0, 0.78); cursor: zoom-out; }
-a.dev-qr-overlay:target { display: flex; align-items: center; justify-content: center; }
-a.dev-qr-overlay img { width: min(64vw, 420px); max-height: 82vh; border-radius: 10px;
-  background: #fff; padding: 10px; pointer-events: none; }
-</style>"""
-
-
-@st.cache_data(show_spinner=False)
-def _png_base64(path_str: str, max_width: int, _mtime: float) -> str:
-    """把二维码图片缩放后转 base64，便于内嵌 HTML（浏览器点击可放大）。"""
-    path = Path(path_str)
-    if not path.exists():
-        return ""
-    data = path.read_bytes()
-    try:
-        from PIL import Image
-
-        image = Image.open(BytesIO(data))
-        if image.width > max_width:
-            height = max(1, round(image.height * max_width / image.width))
-            image = image.convert("RGBA").resize((max_width, height), Image.LANCZOS)
-            buffer = BytesIO()
-            image.save(buffer, format="PNG", optimize=True)
-            data = buffer.getvalue()
-    except Exception:  # noqa: BLE001 - 缩放失败直接用原图
-        pass
-    return base64.b64encode(data).decode("ascii")
-
-
-def _wechat_qr_html() -> str:
-    """右上角微信二维码：缩略图常显，点击弹出全屏大图（纯 CSS :target）。"""
-    if not WECHAT_QR_PATH.exists():
-        return ""
-    mtime = WECHAT_QR_PATH.stat().st_mtime
-    thumb = _png_base64(str(WECHAT_QR_PATH), 180, mtime)
-    large = _png_base64(str(WECHAT_QR_PATH), 480, mtime)
-    if not thumb or not large:
-        return ""
-    thumb_src = "data:image/png;base64," + thumb
-    large_src = "data:image/png;base64," + large
-    return (
-        QR_STYLE
-        + '<div class="dev-qr-wrap">'
-        + '<a class="dev-qr-thumb-link" href="#dev-wechat-qr" title="点击查看大图">'
-        + '<img class="dev-qr-thumb" src="'
-        + thumb_src
-        + '" alt="开发者微信"></a>'
-        + '<div class="dev-qr-cap">开发者微信</div>'
-        + "</div>"
-        + '<a id="dev-wechat-qr" class="dev-qr-overlay" href="#dev-wechat-qr-closed">'
-        + '<img src="'
-        + large_src
-        + '" alt="开发者微信"></a>'
-    )
-
-
-AD_CARD_STYLE = """<style>
-:root { --ad-shift: -140px; --ad-y-up: 0px; --ad-y-down: 0px; }
-@keyframes ad-card-float {
-  0%   { transform: translate(0px, 0px) rotate(0deg); }
-  23%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-up) * -0.6)) rotate(-0.5deg); }
-  46%  { transform: translate(var(--ad-shift), calc(var(--ad-y-up) * -0.25)) rotate(0.4deg); }
-  50%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.25)) rotate(-0.3deg); }
-  54%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.3)) rotate(0.3deg); }
-  77%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-down) * 0.6)) rotate(0.5deg); }
-  100% { transform: translate(0px, 0px) rotate(0deg); }
-}
-a.ad-card { display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 4px; height: 100%; min-height: 92px;
-  border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;
-  text-decoration: none; color: #475569; font-size: 13px; font-weight: 700;
-  text-align: center; padding: 8px 10px;
-  animation: ad-card-float 22s linear infinite;
-  will-change: transform; }
-a.ad-card:hover { background: #eef2ff; border-color: #818cf8; color: #4338ca;
-  animation-play-state: paused; }
-</style>"""
-
-
-AD_FIT_JS = """
-<script>
-(function () {
-  var doc = window.parent.document;
-  var GAP = 20;
-  var Y_MAX = 320;
-  function fit() {
-    var card = doc.querySelector('a.ad-card');
-    var banner = null;
-    var divs = doc.querySelectorAll('div');
-    for (var i = 0; i < divs.length; i++) {
-      var d = divs[i];
-      if (d.style && d.style.width === 'fit-content' && d.innerText &&
-          d.innerText.indexOf('免责声明') >= 0) { banner = d; break; }
-    }
-    var title = doc.querySelector('h1');
-    if (!card || !banner || !title) { return; }
-    // 用 computed transform 矩阵补偿动画位移还原布局坐标（不重置动画相位）
-    var cs = getComputedStyle(card);
-    var matrix = new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform);
-    var cr = card.getBoundingClientRect();
-    var cardLeft = cr.left - matrix.m41;
-    var cardTop = cr.top - matrix.m42;
-    var bannerRight = banner.getBoundingClientRect().right;
-    var titleTop = title.getBoundingClientRect().top;
-    var shift = cardLeft - bannerRight - GAP;
-    if (shift < 0) { shift = 0; }
-    var up = cardTop - titleTop;
-    var down = banner.getBoundingClientRect().bottom - (cardTop + cr.height);
-    if (up < 0) { up = 0; } if (up > Y_MAX) { up = Y_MAX; }
-    if (down < 0) { down = 0; } if (down > Y_MAX) { down = Y_MAX; }
-    doc.documentElement.style.setProperty('--ad-shift', '-' + Math.round(shift) + 'px');
-    doc.documentElement.style.setProperty('--ad-y-up', Math.round(up) + 'px');
-    doc.documentElement.style.setProperty('--ad-y-down', Math.round(down) + 'px');
-  }
-  window.parent.addEventListener('resize', fit);
-  setInterval(fit, 2000);
-  setTimeout(fit, 200);
-  setTimeout(fit, 1200);
-  setTimeout(fit, 3000);
-})();
-</script>
-"""
-
-
-def _ad_card_html() -> str:
-    """主标题右侧广告位：点击弹出开发者微信大图（复用 :target 弹层）。"""
-    card = (
-        '<a class="ad-card" href="#dev-wechat-qr" title="点击查看开发者微信">'
-        "<span>&#128226; 广告招租，</span>"
-        "<span>请联系开发者</span>"
-        "</a>"
-    )
-    return AD_CARD_STYLE + card
-
-
-def _wechat_qr_overlay_html() -> str:
-    """仅渲染全屏弹层（无右上角缩略图），供广告位点击弹出开发者微信大图。"""
-    if not WECHAT_QR_PATH.exists():
-        return ""
-    mtime = WECHAT_QR_PATH.stat().st_mtime
-    large = _png_base64(str(WECHAT_QR_PATH), 480, mtime)
-    if not large:
-        return ""
-    return (
-        QR_STYLE
-        + '<a id="dev-wechat-qr" class="dev-qr-overlay" href="#dev-wechat-qr-closed">'
-        + '<img src="data:image/png;base64,' + large + '" alt="开发者微信"></a>'
-    )
-
-
-_title_col, _ad_col = st.columns([5, 1], vertical_alignment="center")
-with _title_col:
-    st.title("宏观与行业景气动态观察看板")
-    st.caption("A 股牛熊估算｜行业景气度｜海关进出口｜市场流动性跟踪")
-    st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
-with _ad_col:
-    st.markdown(_ad_card_html(), unsafe_allow_html=True)
-components_html(AD_FIT_JS, height=0)
-st.markdown(_wechat_qr_overlay_html(), unsafe_allow_html=True)
+st.title("宏观与行业景气动态观察看板")
+st.caption("A 股牛熊估算｜行业景气度｜海关进出口｜市场流动性跟踪")
+st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
 
 with st.sidebar:
 
@@ -1085,48 +918,6 @@ TREND_TABLE_METRICS: dict[str, str] = {
 TREND_MAX_POINTS = 8
 
 
-# 双击行自动勾选：Streamlit 表格只认行首复选框，注入全局脚本把双击换算成复选框点击
-TREND_DBLCLICK_JS = """
-<script>
-(function(){
-  var pwin = window.parent;
-  var doc = pwin.document;
-  if (doc.__trendDblClickHook) return;
-  doc.__trendDblClickHook = true;
-  var HEADER_H = 35, ROW_H = 35;
-  doc.addEventListener('dblclick', function(e){
-    var target = e.target;
-    var grid = target && target.closest ? target.closest('[data-testid="stDataFrame"]') : null;
-    if (!grid) return;
-    var canvas = grid.querySelector('canvas');
-    if (!canvas) return;
-    var rect = canvas.getBoundingClientRect();
-    var relY = e.clientY - rect.top;
-    if (relY <= HEADER_H) return;
-    var row = Math.floor((relY - HEADER_H) / ROW_H);
-    var x = rect.left + 12, y = rect.top + HEADER_H + row * ROW_H + ROW_H / 2;
-    ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(type){
-      var init = {bubbles:true, cancelable:true, clientX:x, clientY:y, button:0};
-      var ev;
-      if (type.indexOf('pointer') === 0) {
-        init.pointerId = 1; init.pointerType = 'mouse'; init.isPrimary = true;
-        ev = new pwin.PointerEvent(type, init);
-      } else {
-        ev = new pwin.MouseEvent(type, init);
-      }
-      canvas.dispatchEvent(ev);
-    });
-  }, true);
-})();
-</script>
-"""
-
-
-def _inject_trend_dblclick_hook() -> None:
-    """注入双击行自动勾选的全局脚本（document 级幂等，只挂一次）。"""
-    components_html(TREND_DBLCLICK_JS, height=0)
-
-
 # 迷你趋势列默认紧跟在各自对应的数据列后面
 TREND_ANCHOR_COLUMNS: dict[str, str] = {
     "营收趋势": "营收(千万元)",
@@ -1397,7 +1188,6 @@ def render_industry_group(
                 "2×(本期−上年同期)/(|本期|+|上年同期|)，"
                 "亏损收窄与盈利增长可以同尺度比较，避免上年同期为负时同比失真。"
             )
-        _inject_trend_dblclick_hook()
         table = _attach_trend_columns(
             industry_display_frame(group, sort_by), group, all_industry_financials
         )
@@ -1418,7 +1208,7 @@ def render_industry_group(
                 all_industry_financials, company_id, str(row.get("公司名称", company_id))
             )
         else:
-            st.caption("提示：双击表格任意行（或点击行首复选框），下方展示该公司营收、净利润、增长率、毛利率的历史趋势曲线。")
+            st.caption("提示：点击表格行首复选框，下方展示该公司营收、净利润、增长率、毛利率的历史趋势曲线。")
         if _low_return_grey_mask(group, group.index).any():
             st.caption("灰色行：上市满 10 年且分红融资比低于 1，累计分红仍低于历史融资总额。")
         low_confidence = group[
@@ -2109,8 +1899,8 @@ with risk_tab:
                 posted = str(record["ts"])[:16].replace("T", " ")
                 body_cols = st.columns([12, 1])
                 body_cols[0].markdown(
-                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
-                    f"<div style='font-size:0.75rem;color:#888'>网友 · {posted}</div>",
+                    f"<div style='font-size:0.9rem'>{escape(str(record['content']))}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>网友 · {escape(posted)}</div>",
                     unsafe_allow_html=True,
                 )
                 if is_admin and body_cols[1].button("删除", key=f"del_global_{record['id']}"):
@@ -2125,8 +1915,8 @@ with risk_tab:
                 posted = str(record["ts"])[:16].replace("T", " ")
                 my_cols = st.columns([12, 1])
                 my_cols[0].markdown(
-                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
-                    f"<div style='font-size:0.75rem;color:#888'>{posted}</div>",
+                    f"<div style='font-size:0.9rem'>{escape(str(record['content']))}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>{escape(posted)}</div>",
                     unsafe_allow_html=True,
                 )
                 if my_cols[1].button("删除", key=f"del_mine_{record['id']}"):
@@ -2138,8 +1928,8 @@ with risk_tab:
                 posted = str(record["ts"])[:16].replace("T", " ")
                 admin_cols = st.columns([10, 1, 1])
                 admin_cols[0].markdown(
-                    f"<div style='font-size:0.9rem'>{record['content']}</div>"
-                    f"<div style='font-size:0.75rem;color:#888'>IP {record['ip']} · {posted}</div>",
+                    f"<div style='font-size:0.9rem'>{escape(str(record['content']))}</div>"
+                    f"<div style='font-size:0.75rem;color:#888'>IP {escape(str(record['ip']))} · {escape(posted)}</div>",
                     unsafe_allow_html=True,
                 )
                 if admin_cols[1].button("精选", key=f"feat_{record['id']}"):
@@ -2166,7 +1956,6 @@ with watch_tab:
     if selected_industries:
         shown_watchlist = watchlist[watchlist["industry_l3_name"].isin(selected_industries)]
     st.caption(UNIT_CAPTION)
-    _inject_trend_dblclick_hook()
     watch_table = _attach_trend_columns(
         display_frame(shown_watchlist, SORT_METRICS[watch_sort_label]),
         shown_watchlist,
@@ -2313,7 +2102,6 @@ with prosperity_tab:
                 for name in ("景气度趋势", "利润增长趋势", "增加值趋势", "营收趋势")
                 if name in shown.columns
             }
-            _inject_trend_dblclick_hook()
             table_kwargs = {"width": "stretch", "hide_index": True, "column_config": trend_config}
             if not p_hist.empty:
                 table_kwargs.update(
@@ -2326,7 +2114,7 @@ with prosperity_tab:
                 if picked_rows:
                     picked_from_table = str(shown.iloc[picked_rows[0]]["统计行业大类"])
                     st.caption(
-                        f"已联动：{picked_from_table}（双击表格行或点击行首复选框可切换，"
+                        f"已联动：{picked_from_table}（点击行首复选框可切换，"
                         "趋势图见下方「单行业景气趋势」）"
                     )
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
@@ -2363,7 +2151,7 @@ with prosperity_tab:
                 picked = st.selectbox(
                     "选择统计行业大类", pick_options, key="prosperity_trend_pick"
                 )
-                st.caption(f"当前查看：{picked}；双击上方 TOP 表任意行（或点击行首复选框）可联动切换。")
+                st.caption(f"当前查看：{picked}；点击上方 TOP 表行首复选框可联动切换。")
                 _render_prosperity_trend_charts(
                     p_hist_full[p_hist_full["stat_industry"].eq(picked)].sort_values("month"),
                     revenue_rows=(
