@@ -1,0 +1,54 @@
+{
+ "visitors": [
+  "299a25fdc4e43752",
+  "local",
+  "6e177b30bc54674c"
+ ],
+ "daily": {
+  "2026-11-16": {
+   "visitors": [
+    "299a25fdc4e43752",
+    "local",
+    "6e177b30bc54674c"
+   ],
+   "visits": 19
+  },
+  "2026-11-17": {
+   "visitors": [
+    "local",
+    "299a25fdc4e43752",
+    "6e177b30bc54674c"
+   ],
+   "visits": 86
+  },
+  "2026-11-18": {
+   "visitors": [
+    "299a25fdc4e43752",
+    "6e177b30bc54674c",
+    "local"
+   ],
+   "visits": 47
+  },
+  "2026-11-19": {
+   "visitors": [
+    "local",
+    "6e177b30bc54674c",
+    "299a25fdc4e43752"
+   ],
+   "visits": 82
+  },
+  "2026-11-20": {
+   "visitors": [
+    "local",
+    "299a25fdc4e43752"
+   ],
+   "visits": 21
+  },
+  "2026-11-23": {
+   "visitors": [
+    "local"
+   ],
+   "visits": 1
+  }
+ }
+}

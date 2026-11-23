@@ -23,7 +23,8 @@ __pycache__/
 # 抓取台账：每次检索都会追加，不入库
 data/industries/errors.csv
 data/industries/_search_log.csv
-data/visit_stats.json
+
+# 访问统计只存哈希指纹、不含明文 IP；入库以便部署重启后继续累计
 
 # 用户互动运行时数据（含用户 IP 与会话，隐私数据不入库；云端实例各自维护）
 data/prosperity/macro_risk_votes.json
