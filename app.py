@@ -561,6 +561,11 @@ AD_CARD_CSS = """
   100% { transform: translate(0px, 0px) rotate(0deg); }
 }
 div[class*="st-key-ad_card"] {
+  width: max-content !important;
+  min-width: 150px !important;
+  max-width: 180px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
   animation: ad-card-float 22s linear infinite;
   will-change: transform;
 }
@@ -569,6 +574,7 @@ div[class*="st-key-ad_card"] [data-testid="stImage"] {
   display: flex !important;
   justify-content: center !important;
   width: 100% !important;
+  margin: 0 auto !important;
 }
 div[class*="st-key-ad_card"] img {
   display: block;
@@ -632,7 +638,7 @@ with _ad_col:
     if WECHAT_QR_PATH.exists():
         with st.container(key="ad_card", border=True):
             st.markdown(
-                '<div style="text-align:center;font-size:13px;font-weight:700;color:#475569;line-height:1.5;">'
+                '<div style="text-align:center;font-size:13px;font-weight:700;color:#475569;line-height:1.5;white-space:nowrap;">'
                 "广告招租，请联系开发者</div>",
                 unsafe_allow_html=True,
             )
