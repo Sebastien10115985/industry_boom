@@ -144,6 +144,8 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+WECHAT_QR_PATH = Path(__file__).resolve().parent / "data" / "开发者微信.png"
+
 # ---- 行业详情各 tab 的自定义评分权重 ----
 MODEL_WEIGHTS_FILE = Path(__file__).resolve().parent / "data" / "model_weights.json"
 MODEL_WEIGHT_SLIDER_MAX = 0.60
@@ -545,9 +547,47 @@ def _demo_visible_labels(labels: list[str]) -> list[str]:
     return [column for column in labels if column not in hidden_labels]
 
 
-st.title("宏观与行业景气动态观察看板")
-st.caption("A 股牛熊估算｜行业景气度｜海关进出口｜市场流动性跟踪")
-st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
+AD_CARD_CSS = """
+<style>
+@keyframes ad-card-float {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(-6px, -2px) rotate(-0.4deg); }
+  50% { transform: translate(-12px, 0) rotate(0.4deg); }
+  75% { transform: translate(-6px, 2px) rotate(0.2deg); }
+}
+div[class*="st-key-ad_card"] {
+  animation: ad-card-float 18s ease-in-out infinite;
+  will-change: transform;
+}
+div[class*="st-key-ad_card"]:hover { animation-play-state: paused; }
+div[class*="st-key-ad_card"] img {
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+  border: 1px solid #dcdfe4;
+}
+</style>
+"""
+st.markdown(AD_CARD_CSS, unsafe_allow_html=True)
+
+_title_col, _ad_col = st.columns([5, 1], vertical_alignment="center")
+with _title_col:
+    st.title("宏观与行业景气动态观察看板")
+    st.caption("A 股牛熊估算｜行业景气度｜海关进出口｜市场流动性跟踪")
+    st.markdown(RISK_BANNER_HTML, unsafe_allow_html=True)
+with _ad_col:
+    if WECHAT_QR_PATH.exists():
+        with st.container(key="ad_card", border=True):
+            st.markdown(
+                '<div style="text-align:center;font-size:13px;font-weight:700;color:#475569;line-height:1.5;">'
+                "广告招租<br>请联系开发者</div>",
+                unsafe_allow_html=True,
+            )
+            st.image(str(WECHAT_QR_PATH), width=132)
+            st.markdown(
+                '<div style="text-align:center;font-size:12px;color:#94a3b8;">开发者微信</div>',
+                unsafe_allow_html=True,
+            )
 
 with st.sidebar:
 
