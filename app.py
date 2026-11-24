@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import date
@@ -570,12 +571,6 @@ div[class*="st-key-ad_card"] {
   will-change: transform;
 }
 div[class*="st-key-ad_card"]:hover { animation-play-state: paused; }
-div[class*="st-key-ad_card"] [data-testid="stImage"] {
-  display: flex !important;
-  justify-content: center !important;
-  width: 100% !important;
-  margin: 0 auto !important;
-}
 div[class*="st-key-ad_card"] img {
   display: block;
   margin: 0 auto;
@@ -642,7 +637,14 @@ with _ad_col:
                 "广告招租，请联系开发者</div>",
                 unsafe_allow_html=True,
             )
-            st.image(str(WECHAT_QR_PATH), width=132)
+            qr_data = base64.b64encode(WECHAT_QR_PATH.read_bytes()).decode("ascii")
+            st.markdown(
+                '<div style="display:flex;justify-content:center;width:100%;">'
+                f'<img src="data:image/png;base64,{qr_data}" '
+                'style="width:132px;max-width:100%;display:block;border-radius:8px;border:1px solid #dcdfe4;">'
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
 components_html(AD_FIT_JS, height=0)
 
