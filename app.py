@@ -10,6 +10,7 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.components.v1 import html as components_html
 
 from financing_dividend_provider import attach_financing_dividend
 from data_io import (
@@ -549,14 +550,18 @@ def _demo_visible_labels(labels: list[str]) -> list[str]:
 
 AD_CARD_CSS = """
 <style>
+:root { --ad-shift: -140px; --ad-y-up: 0px; --ad-y-down: 0px; }
 @keyframes ad-card-float {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  25% { transform: translate(-6px, -2px) rotate(-0.4deg); }
-  50% { transform: translate(-12px, 0) rotate(0.4deg); }
-  75% { transform: translate(-6px, 2px) rotate(0.2deg); }
+  0%   { transform: translate(0px, 0px) rotate(0deg); }
+  23%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-up) * -0.6)) rotate(-0.5deg); }
+  46%  { transform: translate(var(--ad-shift), calc(var(--ad-y-up) * -0.25)) rotate(0.4deg); }
+  50%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.25)) rotate(-0.3deg); }
+  54%  { transform: translate(var(--ad-shift), calc(var(--ad-y-down) * 0.3)) rotate(0.3deg); }
+  77%  { transform: translate(calc(var(--ad-shift) * 0.5), calc(var(--ad-y-down) * 0.6)) rotate(0.5deg); }
+  100% { transform: translate(0px, 0px) rotate(0deg); }
 }
 div[class*="st-key-ad_card"] {
-  animation: ad-card-float 18s ease-in-out infinite;
+  animation: ad-card-float 22s linear infinite;
   will-change: transform;
 }
 div[class*="st-key-ad_card"]:hover { animation-play-state: paused; }
@@ -569,6 +574,49 @@ div[class*="st-key-ad_card"] img {
 </style>
 """
 st.markdown(AD_CARD_CSS, unsafe_allow_html=True)
+
+AD_FIT_JS = """
+<script>
+(function () {
+  var doc = window.parent.document;
+  var GAP = 20;
+  var Y_MAX = 320;
+  function fit() {
+    var card = doc.querySelector('[class*="st-key-ad_card"]');
+    var banner = null;
+    var divs = doc.querySelectorAll('div');
+    for (var i = 0; i < divs.length; i++) {
+      var d = divs[i];
+      if (d.style && d.style.width === 'fit-content' && d.innerText &&
+          d.innerText.indexOf('免责声明') >= 0) { banner = d; break; }
+    }
+    var title = doc.querySelector('h1');
+    if (!card || !banner || !title) { return; }
+    var cs = getComputedStyle(card);
+    var matrix = new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform);
+    var cr = card.getBoundingClientRect();
+    var cardLeft = cr.left - matrix.m41;
+    var cardTop = cr.top - matrix.m42;
+    var bannerRight = banner.getBoundingClientRect().right;
+    var titleTop = title.getBoundingClientRect().top;
+    var shift = cardLeft - bannerRight - GAP;
+    if (shift < 0) { shift = 0; }
+    var up = cardTop - titleTop;
+    var down = banner.getBoundingClientRect().bottom - (cardTop + cr.height);
+    if (up < 0) { up = 0; } if (up > Y_MAX) { up = Y_MAX; }
+    if (down < 0) { down = 0; } if (down > Y_MAX) { down = Y_MAX; }
+    doc.documentElement.style.setProperty('--ad-shift', '-' + Math.round(shift) + 'px');
+    doc.documentElement.style.setProperty('--ad-y-up', Math.round(up) + 'px');
+    doc.documentElement.style.setProperty('--ad-y-down', Math.round(down) + 'px');
+  }
+  window.parent.addEventListener('resize', fit);
+  setInterval(fit, 2000);
+  setTimeout(fit, 200);
+  setTimeout(fit, 1200);
+  setTimeout(fit, 3000);
+})();
+</script>
+"""
 
 _title_col, _ad_col = st.columns([5, 1], vertical_alignment="center")
 with _title_col:
@@ -588,6 +636,7 @@ with _ad_col:
                 '<div style="text-align:center;font-size:12px;color:#94a3b8;">开发者微信</div>',
                 unsafe_allow_html=True,
             )
+components_html(AD_FIT_JS, height=0)
 
 with st.sidebar:
 
