@@ -565,6 +565,11 @@ div[class*="st-key-ad_card"] {
   will-change: transform;
 }
 div[class*="st-key-ad_card"]:hover { animation-play-state: paused; }
+div[class*="st-key-ad_card"] [data-testid="stImage"] {
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
 div[class*="st-key-ad_card"] img {
   display: block;
   margin: 0 auto;
@@ -628,14 +633,11 @@ with _ad_col:
         with st.container(key="ad_card", border=True):
             st.markdown(
                 '<div style="text-align:center;font-size:13px;font-weight:700;color:#475569;line-height:1.5;">'
-                "广告招租<br>请联系开发者</div>",
+                "广告招租，请联系开发者</div>",
                 unsafe_allow_html=True,
             )
             st.image(str(WECHAT_QR_PATH), width=132)
-            st.markdown(
-                '<div style="text-align:center;font-size:12px;color:#94a3b8;">开发者微信</div>',
-                unsafe_allow_html=True,
-            )
+
 components_html(AD_FIT_JS, height=0)
 
 with st.sidebar:
