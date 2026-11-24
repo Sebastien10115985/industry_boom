@@ -563,8 +563,9 @@ AD_CARD_CSS = """
 }
 div[class*="st-key-ad_card"] {
   width: max-content !important;
-  min-width: 150px !important;
-  max-width: 180px !important;
+  min-width: 180px !important;
+  max-width: 210px !important;
+  box-sizing: border-box !important;
   margin-left: auto !important;
   margin-right: auto !important;
   animation: ad-card-float 22s linear infinite;
@@ -573,7 +574,7 @@ div[class*="st-key-ad_card"] {
 div[class*="st-key-ad_card"]:hover { animation-play-state: paused; }
 div[class*="st-key-ad_card"] img {
   display: block;
-  margin: 0 auto;
+  margin: 0 auto 12px;
   border-radius: 8px;
   border: 1px solid #dcdfe4;
 }
