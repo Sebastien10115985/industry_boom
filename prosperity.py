@@ -78,12 +78,19 @@ def compute_prosperity(
         group = group.sort_values("month")
         profit = pd.to_numeric(group["profit_yoy"], errors="coerce")
         value_added = pd.to_numeric(group["industry_value_added_yoy"], errors="coerce")
+        revenue = (
+            pd.to_numeric(group["revenue_yoy"], errors="coerce")
+            if "revenue_yoy" in group.columns
+            else pd.Series(dtype=float)
+        )
         profit_mean = float(profit.mean()) if profit.notna().any() else float("nan")
         value_added_mean = float(value_added.mean()) if value_added.notna().any() else float("nan")
         profit_latest = _last_valid(profit)
         value_added_latest = _last_valid(value_added)
         months_count = int(group["month"].nunique())
-        if pd.isna(profit_mean):
+        has_revenue = bool(revenue.notna().any())
+        # 利润同比因上年同期亏损未公布时，若利润发布页仍有营收增长，保留该行业参与展示
+        if pd.isna(profit_mean) and not has_revenue:
             continue
         if months_count < min_months:
             continue
@@ -92,6 +99,8 @@ def compute_prosperity(
             notes.append("工业增加值未公布该行业")
         if pd.isna(profit_latest) and not pd.isna(profit_mean):
             notes.append("最新期利润同比因上年同期亏损未公布")
+        if pd.isna(profit_mean) and has_revenue:
+            notes.append("利润同比未公布（上年同期亏损），以营收增长为参考")
         if months_count < window:
             notes.append(f"仅 {months_count}/{window} 个月有数据")
         rows.append(
@@ -253,6 +262,31 @@ EXTRA_STAT_INDUSTRIES: tuple[str, ...] = (
     "仪器仪表制造业",
     "电力、热力生产和供应业",
 )
+
+# 展示行业中，工业增加值发布未覆盖、仅能从工业企业利润发布页取到营收/利润信息的行业。
+# 页面在这些行业名后加 * 并在表下统一注释，内部仍使用原名做映射与选表。
+PROFIT_ONLY_STAT_INDUSTRIES: tuple[str, ...] = (
+    "有色金属矿采选业",
+    "非金属矿采选业",
+    "石油、煤炭及其他燃料加工业",
+    "烟草制品业",
+    "造纸和纸制品业",
+    "化学纤维制造业",
+    "仪器仪表制造业",
+    "燃气生产和供应业",
+)
+PROFIT_ONLY_NOTE = "仅能从统计局获取该行业营收和利润增长，工业增加值变化情况没有数据"
+
+
+def stat_industry_label(name: str) -> str:
+    """展示用行业名：仅利润页有数据的行业尾部加 *。"""
+    return f"{name}*" if name in PROFIT_ONLY_STAT_INDUSTRIES else str(name)
+
+
+def stat_industry_key(label: str) -> str:
+    """把展示用行业名还原为内部统计行业名。"""
+    text = str(label)
+    return text[:-1] if text.endswith("*") else text
 
 
 def prosperity_for_industries(

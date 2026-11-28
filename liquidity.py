@@ -38,18 +38,11 @@ INDEX_LABELS = {
 
 METRICS: dict[str, dict[str, object]] = {
     "dr007": {
-        "label": "DR007",
+        "label": "银行间存款7天回购利率DR007",
         "frequency": "weekly",
         "direction": -1,
         "weight": 0.15,
         "group": "short_term",
-    },
-    "bond_10y": {
-        "label": "十年期国债收益率",
-        "frequency": "weekly",
-        "direction": -1,
-        "weight": 0.15,
-        "group": "money",
     },
     "margin_balance": {
         "label": "两融余额",
@@ -64,6 +57,13 @@ METRICS: dict[str, dict[str, object]] = {
         "direction": 1,
         "weight": 0.11,
         "group": "short_term",
+    },
+    "bond_10y": {
+        "label": "十年期国债收益率",
+        "frequency": "weekly",
+        "direction": -1,
+        "weight": 0.15,
+        "group": "money",
     },
     "m1_m2_gap": {
         "label": "M1-M2剪刀差",

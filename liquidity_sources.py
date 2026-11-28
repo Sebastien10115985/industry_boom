@@ -49,7 +49,7 @@ PBC_SOCIAL_FINANCE_PAGE_URL = "http://www.pbc.gov.cn/diaochatongjisi/116219/1163
 # 数据源登记：页面上展示，也是数据留存清单
 SOURCE_REGISTRY: dict[str, dict[str, str]] = {
     "dr007": {
-        "label": "DR007（存款类机构7天回购定盘利率）",
+        "label": "银行间存款7天回购利率DR007",
         "frequency": "周频（日度取每周最后交易日）",
         "provider": "中国货币网·全国银行间同业拆借中心",
         "url": CHINAMONEY_PAGE_URL,
@@ -100,7 +100,7 @@ SOURCE_REGISTRY: dict[str, dict[str, str]] = {
 }
 
 METRIC_LABELS = {
-    "dr007": "DR007",
+    "dr007": "银行间存款7天回购利率DR007",
     "bond_10y": "十年期国债收益率",
     "margin_balance": "两融余额",
     "margin_balance_yoy": "两融余额同比",

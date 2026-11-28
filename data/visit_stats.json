@@ -2,7 +2,8 @@
  "visitors": [
   "299a25fdc4e43752",
   "local",
-  "6e177b30bc54674c"
+  "6e177b30bc54674c",
+  "d1fc060650fb963f"
  ],
  "daily": {
   "2026-11-16": {
@@ -46,9 +47,24 @@
   },
   "2026-11-23": {
    "visitors": [
+    "local",
+    "d1fc060650fb963f"
+   ],
+   "visits": 12
+  },
+  "2026-11-24": {
+   "visitors": [
+    "local",
+    "d1fc060650fb963f"
+   ],
+   "visits": 19
+  },
+  "2026-11-28": {
+   "visitors": [
+    "d1fc060650fb963f",
     "local"
    ],
-   "visits": 1
+   "visits": 5
   }
  }
 }

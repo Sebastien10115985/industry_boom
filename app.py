@@ -91,10 +91,13 @@ from prosperity import (
     DEFAULT_TOP_N,
     DEFAULT_WINDOW,
     PRIMARY_STAT_INDUSTRIES,
+    PROFIT_ONLY_NOTE,
     corresponding_industries,
     prosperity_board,
     prosperity_for_industries,
     prosperity_history,
+    stat_industry_key,
+    stat_industry_label,
     top_companies_for_industry_ids,
 )
 from admin_auth import verify_admin_key
@@ -980,11 +983,11 @@ def industry_display_frame(frame: pd.DataFrame, sort_by: str | None = None) -> p
 
 
 def _low_return_grey_mask(group: pd.DataFrame, index) -> pd.Series:
-    """上市满 10 年且分红融资比 < 1 的公司行（整行灰化提示分红回报不足）。"""
+    """上市超 20 年且分红融资比 < 0.6 的公司行（整行灰化提示分红回报不足）。"""
     ratio = pd.to_numeric(group.get("dividend_funding_ratio"), errors="coerce")
     listing = pd.to_datetime(group.get("listing_date"), errors="coerce")
-    ten_years_ago = pd.Timestamp.today() - pd.DateOffset(years=10)
-    grey = listing.notna() & listing.lt(ten_years_ago) & ratio.lt(1)
+    twenty_years_ago = pd.Timestamp.today() - pd.DateOffset(years=20)
+    grey = listing.notna() & listing.lt(twenty_years_ago) & ratio.lt(0.6)
     return grey.reindex(index).fillna(False)
 
 
@@ -1386,7 +1389,7 @@ def render_industry_group(
         else:
             st.caption("提示：点击表格行首复选框，或使用上方「查看大图」下拉框，查看历史趋势曲线。")
         if _low_return_grey_mask(group, group.index).any():
-            st.caption("灰色行：上市满 10 年且分红融资比低于 1，累计分红仍低于历史融资总额。")
+            st.caption("灰色行：上市超 20 年且分红融资比低于 0.6，累计分红明显低于历史融资总额。")
         low_confidence = group[
             pd.to_numeric(group.get("extraction_confidence"), errors="coerce").lt(2 / 3)
         ]
@@ -1543,22 +1546,27 @@ def render_stat_industry_block(
             .sort_values("industry_l3_id")
             .reset_index(drop=True)
         )
+    def _format_growth(value: object) -> str:
+        if value is None or pd.isna(value):
+            return "—"
+        return f"{float(value):.1f}%"
+
     parts: list[str] = []
     for item in stat_items:
         score = item["score"]
         profit_latest = item["profit_latest"]
-        name = str(item["stat_industry"])
+        name = stat_industry_label(str(item["stat_industry"]))
         if len(stat_items) > 1 and profit_latest is not None:
             # 合并框内并列多个大类，逐个标注景气度与利润增长
             parts.append(
                 f"{name}：景气度 {score if score is not None else '—'}，"
-                f"利润增长 {profit_latest:.1f}%"
+                f"利润增长 {_format_growth(profit_latest)}"
             )
         elif score is None:
             parts.append(f"{name}：统计局暂无月度景气数据")
         else:
             parts.append(
-                f"{name}：景气度 {score}，利润增长 {profit_latest:.1f}%"
+                f"{name}：景气度 {score}，利润增长 {_format_growth(profit_latest)}"
             )
     if footer_notes:
         label = group_title or f"{len(stat_items)} 个统计局大类"
@@ -2279,6 +2287,7 @@ with prosperity_tab:
                 )
                 shown["营收趋势"] = shown["统计行业大类"].map(revenue_trend)
                 shown = _place_trend_after(shown, {"营收趋势": "营业收入（亿元）"})
+            shown["统计行业大类"] = shown["统计行业大类"].map(stat_industry_label)
             trend_config = {
                 name: st.column_config.LineChartColumn(name, width="small")
                 for name in ("景气度趋势", "利润增长趋势", "增加值趋势", "营收趋势")
@@ -2294,12 +2303,15 @@ with prosperity_tab:
             if not p_hist.empty:
                 picked_rows = list(getattr(prosperity_event, "selection", {}).get("rows", []))
                 if picked_rows:
-                    picked_from_table = str(shown.iloc[picked_rows[0]]["统计行业大类"])
+                    picked_from_table = stat_industry_key(
+                        str(shown.iloc[picked_rows[0]]["统计行业大类"])
+                    )
                     st.caption(
-                        f"已联动：{picked_from_table}（点击行首复选框可切换，"
+                        f"已联动：{stat_industry_label(picked_from_table)}（点击行首复选框可切换，"
                         "趋势图见下方「单行业景气趋势」）"
                     )
             st.caption("单位为同比增长百分数；景气度为 0—100 的综合分，越高越景气。")
+            st.caption(f"带 * 的行业：{PROFIT_ONLY_NOTE}。")
             st.caption(
                 "景气度算法：取近 "
                 + str(prosperity_window)
@@ -2318,22 +2330,28 @@ with prosperity_tab:
                 st.divider()
                 st.markdown("**单行业景气趋势**")
                 p_hist_full = prosperity_history(history, window=prosperity_window, points=120)
-                pick_options = sorted(p_hist_full["stat_industry"].unique())
+                pick_options = sorted(
+                    p_hist_full["stat_industry"].map(stat_industry_label).unique()
+                )
                 # selectbox 完全由 Session State 控制：默认取 TOP 首行，表格选中行会覆盖
                 if "prosperity_trend_pick" not in st.session_state:
                     default_pick = str(shown["统计行业大类"].iloc[0])
                     st.session_state["prosperity_trend_pick"] = (
                         default_pick if default_pick in pick_options else pick_options[0]
                     )
-                if picked_from_table and picked_from_table in pick_options:
+                table_pick_label = (
+                    stat_industry_label(picked_from_table) if picked_from_table else ""
+                )
+                if table_pick_label and table_pick_label in pick_options:
                     # 仅当表格选中行发生变化时同步一次，避免覆盖用户在选择器里的手动切换
-                    if st.session_state.get("prosperity_last_table_pick") != picked_from_table:
-                        st.session_state["prosperity_last_table_pick"] = picked_from_table
-                        st.session_state["prosperity_trend_pick"] = picked_from_table
-                picked = st.selectbox(
+                    if st.session_state.get("prosperity_last_table_pick") != table_pick_label:
+                        st.session_state["prosperity_last_table_pick"] = table_pick_label
+                        st.session_state["prosperity_trend_pick"] = table_pick_label
+                picked_label = st.selectbox(
                     "选择统计行业大类", pick_options, key="prosperity_trend_pick"
                 )
-                st.caption(f"当前查看：{picked}；点击上方 TOP 表行首复选框可联动切换。")
+                picked = stat_industry_key(picked_label)
+                st.caption(f"当前查看：{picked_label}；点击上方 TOP 表行首复选框可联动切换。")
                 _render_prosperity_trend_charts(
                     p_hist_full[p_hist_full["stat_industry"].eq(picked)].sort_values("month"),
                     revenue_rows=(
@@ -2383,22 +2401,21 @@ with prosperity_tab:
                 )
                 if column in extra_rows.columns
             ]
-            st.dataframe(
-                extra_rows[extra_columns].rename(
-                    columns={
-                        "stat_industry": "统计行业大类",
-                        "prosperity_score": "景气度",
-                        "profit_yoy_latest": "利润增长率（最新月）",
-                        "value_added_yoy_latest": "工业增加值增长率（最新月）",
-                        "profit_momentum": "利润增长动量",
-                        "months": "有效月数",
-                        "latest_month": "最新月份",
-                        "data_note": "数据说明",
-                    }
-                ),
-                width="stretch",
-                hide_index=True,
+            extra_shown = extra_rows[extra_columns].rename(
+                columns={
+                    "stat_industry": "统计行业大类",
+                    "prosperity_score": "景气度",
+                    "profit_yoy_latest": "利润增长率（最新月）",
+                    "value_added_yoy_latest": "工业增加值增长率（最新月）",
+                    "profit_momentum": "利润增长动量",
+                    "months": "有效月数",
+                    "latest_month": "最新月份",
+                    "data_note": "数据说明",
+                }
             )
+            extra_shown["统计行业大类"] = extra_shown["统计行业大类"].map(stat_industry_label)
+            st.dataframe(extra_shown, width="stretch", hide_index=True)
+            st.caption(f"带 * 的行业：{PROFIT_ONLY_NOTE}。")
 
     st.divider()
     st.subheader("申万三级行业目录")
@@ -2752,7 +2769,7 @@ with customs_tab:
 with liquidity_tab:
     st.caption(
         "流动性指数把指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再分组合成。"
-        "短期资金价格与市场风偏纳入 DR007、两融余额及其同比，反映银行间短端资金价格与场内杠杆；"
+        "短期资金价格与市场风偏纳入银行间存款7天回购利率DR007、两融余额及其同比，反映银行间短端资金价格与场内杠杆；"
         "信用货币长期利率与增速纳入 M1-M2 剪刀差、M2 同比、社融存量同比和十年期国债收益率，"
         "分别反映实体货币信用扩张与长端无风险利率。"
         "流动性指数 = 短期 × 组权重 + 信用货币长期利率与增速 × 组权重，组权重为组内指标默认权重之和"
@@ -2775,7 +2792,7 @@ with liquidity_tab:
             liquidity_progress.progress(step / max(total, 1), text=message)
 
         try:
-            with st.spinner("正在更新 DR007、国债收益率、两融余额、货币数据与社融存量表，约 1-2 分钟。"):
+            with st.spinner("正在更新银行间存款7天回购利率DR007、国债收益率、两融余额、货币数据与社融存量表，约 1-2 分钟。"):
                 liquidity_counts = update_liquidity_cache(progress=show_liquidity_progress)
             liquidity_progress.progress(1.0, text="更新完成")
             st.success(
@@ -2872,7 +2889,7 @@ with liquidity_tab:
                 custom_weights,
             )
             st.dataframe(short_term_components, width="stretch", hide_index=True)
-            st.caption("「最新值」为原始单位：DR007、两融余额同比为 %，两融余额为亿元。")
+            st.caption("「最新值」为原始单位：银行间存款7天回购利率DR007、两融余额同比为 %，两融余额为亿元。")
 
             st.divider()
             st.subheader("信用货币长期利率与增速")
