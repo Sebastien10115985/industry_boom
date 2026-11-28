@@ -70,7 +70,7 @@ SOURCE_REGISTRY: dict[str, dict[str, str]] = {
         "mode": "自动",
     },
     "m1_m2_gap": {
-        "label": "M1-M2 剪刀差",
+        "label": "M1-M2同比剪刀差",
         "frequency": "月频",
         "provider": "央行货币供应量统计（东方财富数据中心转载）",
         "url": PBC_SOCIAL_FINANCE_PAGE_URL,
@@ -104,7 +104,7 @@ METRIC_LABELS = {
     "bond_10y": "十年期国债收益率",
     "margin_balance": "两融余额",
     "margin_balance_yoy": "两融余额同比",
-    "m1_m2_gap": "M1-M2剪刀差",
+    "m1_m2_gap": "M1-M2同比剪刀差",
     "m2_yoy": "M2同比增速",
     "social_financing_stock": "社会融资规模存量",
     "social_financing_yoy": "社融存量同比",
