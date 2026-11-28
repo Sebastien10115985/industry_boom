@@ -190,6 +190,29 @@ python online_cli.py prosperity --input my_nbs.csv            # 导入手工整�
 
 历史数据存放在 `data/prosperity/nbs_monthly.csv`（本地数据，不入库）。注意工业增加值只公布主要行业（约 20 个），其余行业该项为空并按中性值处理。
 
+## 海关月度重点出口商品信息采集
+
+「海关数据」页签从海关总署月度公报采集重点出口商品，展示当月出口金额、1—N 月累计金额和累计金额同比（金额单位亿元，同比为累计金额比上年同期）。共跟踪 20 项商品，按电子信息、电工器材与电力设备、汽车与交通装备、通用机械与有色、家电与医疗健康、综合项六类分组；机电产品等汇总项不单列。
+
+- 数据源：海关总署英文站月度公报 `(5) China's Major Exports by Quantity and Value (in CNY)`，与中文站「重点出口商品量值表（人民币值）」同源；中文站有瑞数 WAF，自动抓取走英文站。英文站列表只保留当年已发布期数，页面按钮一次抓取最近 13 期。
+- 数据文件：`data/prosperity/customs_monthly.csv`（本地数据，不入库）。按「月份 + 商品」合并，新数据覆盖旧数据，不删除已有记录。
+- 页面查看：固定 9 项商品的累计同比曲线、可多选的累计金额趋势（默认高新技术产品/集成电路/汽车）、最新一期明细（同类相邻、组内按当月金额降序）及 Wind 行业映射。其中高新技术产品、生命科学技术、光电技术为跨行业综合项，与分项交叉，不能直接加总。
+
+页面「从海关总署更新」按钮的命令行等价写法：
+
+```powershell
+python -c "from customs_provider import update_customs; print(update_customs(months=13).shape)"
+```
+
+若英文站抓取失败，可把中文站量值表文章页另存为 HTML，在页签中用「上传量值表文章 HTML（兜底）」导入。历史期回填（英文站无历史链接）：中文站 2023-01 至 2025-12 需要浏览器 Cookie（瑞数校验，纯 requests 返回 412），先预览、确认后再写入：
+
+```powershell
+python tools/backfill_customs_cn.py --cookie "粘贴整串Cookie"
+python tools/backfill_customs_cn.py --cookie "粘贴整串Cookie" --apply
+```
+
+也可把中文站另存的各期 HTML 或月报 XLS（人民币值表）放入 `data/customs_html_backfill/`，用 `python tools/import_customs_html_dir.py` 预览、加 `--apply` 写入。回填前自动备份 CSV，解析不足 12 项的期数会跳过以避免脏数据入库。核心实现见 `customs_provider.py`。
+
 ## 流动性指数
 
 「流动性分析」页签把六个流动性指标合成一个指数：先**同向化**（宽松 = 数值变大；利率类乘 −1），
