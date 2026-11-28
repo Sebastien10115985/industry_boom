@@ -141,8 +141,8 @@ class WeightAndSynthesisTests(unittest.TestCase):
             )
             for group in ("short_term", "money")
         }
-        self.assertAlmostEqual(group_totals["short_term"], 0.41)
-        self.assertAlmostEqual(group_totals["money"], 0.59)
+        self.assertAlmostEqual(group_totals["short_term"], 0.37)
+        self.assertAlmostEqual(group_totals["money"], 0.63)
 
     def test_compute_indices_without_social_financing(self):
         indices, components, notes = lq.compute_liquidity_indices(make_source_metrics())
@@ -151,13 +151,13 @@ class WeightAndSynthesisTests(unittest.TestCase):
         self.assertIn("liquidity_index", indices.columns)
         self.assertIn("short_term_index", indices.columns)
         self.assertIn("money_index", indices.columns)
-        short_term_rows = components[components["分组"].eq("短端资金价格指数")]
+        short_term_rows = components[components["分组"].eq("短期资金价格与市场风偏")]
         self.assertEqual(len(short_term_rows), 3)
-        money_rows = components[components["分组"].eq("信用货币增速指数")]
+        money_rows = components[components["分组"].eq("信用货币长期利率与增速")]
         self.assertEqual(len(money_rows), 4)
         manual_row = components[components["metric"].eq("social_financing_yoy")].iloc[0]
         self.assertEqual(manual_row["数据区间"], "无数据")
-        # 两融余额同比由两融余额水平派生，自动参与货币组合成
+        # 两融余额同比由两融余额水平派生，自动参与短期资金价格与市场风偏组合成
         yoy_row = components[components["metric"].eq("margin_balance_yoy")].iloc[0]
         self.assertNotEqual(yoy_row["数据区间"], "无数据")
 
@@ -165,7 +165,7 @@ class WeightAndSynthesisTests(unittest.TestCase):
         indices, _, _ = lq.compute_liquidity_indices(make_source_metrics())
         check = indices.dropna()
         self.assertFalse(check.empty)
-        rebuilt = 0.41 * check["short_term_index"] + 0.59 * check["money_index"]
+        rebuilt = 0.37 * check["short_term_index"] + 0.63 * check["money_index"]
         self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
 
     def test_custom_weights_change_index_and_tables(self):
@@ -183,8 +183,8 @@ class WeightAndSynthesisTests(unittest.TestCase):
             metrics, weights=custom
         )
         check = custom_indices.dropna()
-        # 自定义权重下，组权重 = 组内自定义权重之和（本例仍为 0.41/0.59），组合式仍成立
-        rebuilt = 0.41 * check["short_term_index"] + 0.59 * check["money_index"]
+        # 自定义权重下，组权重 = 组内自定义权重之和（本例短期 0.56、信用货币长期利率与增速 0.44），组合式仍成立
+        rebuilt = 0.56 * check["short_term_index"] + 0.44 * check["money_index"]
         self.assertTrue(np.allclose(rebuilt, check["liquidity_index"], atol=1e-6))
         # 指数数值确实随权重变化
         self.assertFalse(

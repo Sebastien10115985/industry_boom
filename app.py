@@ -813,16 +813,16 @@ UNIT_CAPTION = (
     "点击表头也可临时改排序。"
 )
 
-# 流动性原始曲线的展示顺序：先短端三项，再信用货币增速四项
+# 流动性原始曲线的展示顺序：先短期资金价格与市场风偏三项，再信用货币长期利率与增速四项
 METRIC_CHART_ORDER: tuple[str, ...] = (
     "dr007",
-    "bond_10y",
     "margin_balance",
+    "margin_balance_yoy",
+    "bond_10y",
     "m1_m2_gap",
     "m2_yoy",
     "social_financing_stock",
     "social_financing_yoy",
-    "margin_balance_yoy",
 )
 
 METRIC_CHART_NOTES: dict[str, str] = {
@@ -830,7 +830,10 @@ METRIC_CHART_NOTES: dict[str, str] = {
         "单位 %。银行间存款类机构 7 天回购利率（FDR007 定盘价），"
         "季末、年末等跨期时点常见脉冲式冲高。越高越紧。"
     ),
-    "bond_10y": "单位 %。中债十年期国债到期收益率，反映长端无风险利率水平。越高越紧。",
+    "bond_10y": (
+        "单位 %。中债十年期国债到期收益率，反映长端无风险利率水平，"
+        "参与信用货币长期利率与增速指数合成。越高越紧。"
+    ),
     "margin_balance": (
         "单位 万亿元。沪深两融余额水平，衡量场内杠杆资金的体量。越高越宽松。"
     ),
@@ -844,11 +847,11 @@ METRIC_CHART_NOTES: dict[str, str] = {
     ),
     "social_financing_yoy": (
         "单位 %。社融存量同比增速，直接取央行存量统计表中的「增速」列，"
-        "与公众号月度报告同源，参与信用货币增速指数合成。越高越宽松。"
+        "与公众号月度报告同源，参与信用货币长期利率与增速指数合成。越高越宽松。"
     ),
     "margin_balance_yoy": (
         "单位 %。两融余额相对 52 周前的同比增速（由两融余额水平派生），"
-        "属增速类指标，参与信用货币增速指数合成。越高越宽松。"
+        "参与短期资金价格与市场风偏指数合成。越高越宽松。"
     ),
 }
 
@@ -2169,7 +2172,12 @@ with prosperity_tab:
     control_columns = st.columns([2, 1, 1])
     prosperity_window = int(control_columns[1].slider("滚动窗口（月）", 3, 12, DEFAULT_WINDOW, 1))
     prosperity_top_n = int(control_columns[2].slider("最景气行业数", 3, 10, DEFAULT_TOP_N, 1))
-    if control_columns[0].button("从国家统计局更新月度景气数据", width="stretch"):
+    if control_columns[0].button(
+        "从国家统计局更新月度景气数据",
+        width="stretch",
+        key="prosperity_update",
+        type="primary",
+    ):
         try:
             with st.spinner("正在从国家统计局检索分行业工业增加值与利润总额数据。"):
                 update_history(months=prosperity_window)
@@ -2744,10 +2752,11 @@ with customs_tab:
 with liquidity_tab:
     st.caption(
         "流动性指数把指标同向化（宽松=数值变大）后按滚动窗口 Z-score 标准化，再分组合成。"
-        "短端只放价格与体量类指标（DR007、十年期国债收益率、两融余额），"
-        "两融余额同比属增速类，与 M1-M2 剪刀差、M2 同比、社融存量同比同组构成信用货币增速指数；"
-        "流动性指数 = 短端 × 组权重 + 信用货币增速 × 组权重，组权重为组内指标默认权重之和"
-        "（默认 0.41×短端 + 0.59×信用货币增速）。"
+        "短期资金价格与市场风偏纳入 DR007、两融余额及其同比，反映银行间短端资金价格与场内杠杆；"
+        "信用货币长期利率与增速纳入 M1-M2 剪刀差、M2 同比、社融存量同比和十年期国债收益率，"
+        "分别反映实体货币信用扩张与长端无风险利率。"
+        "流动性指数 = 短期 × 组权重 + 信用货币长期利率与增速 × 组权重，组权重为组内指标默认权重之和"
+        "（默认 0.37×短期 + 0.63×信用货币长期利率与增速）。"
         "各指标默认权重见下方「成分参数及权重」表，可在「自定义指标权重」中动态调整，"
         "调整后所有指数与成分表即时按新权重重算。"
         "月度数据按次月 10 日生效，避免使用未公布数据。"
@@ -2847,7 +2856,7 @@ with liquidity_tab:
             )
 
             st.divider()
-            st.subheader("短端资金价格指数（周度更新）")
+            st.subheader("短期资金价格与市场风偏")
             if "short_term_index" in liquidity_indices:
                 render_liquidity_block(
                     liquidity_indices["short_term_index"],
@@ -2857,16 +2866,16 @@ with liquidity_tab:
                 )
             short_term_components = _attach_group_share(
                 liquidity_components[
-                    liquidity_components["分组"].eq("短端资金价格指数")
+                    liquidity_components["分组"].eq("短期资金价格与市场风偏")
                 ].drop(columns=["metric", "分组"]),
                 "short_term",
                 custom_weights,
             )
             st.dataframe(short_term_components, width="stretch", hide_index=True)
-            st.caption("「最新值」为原始单位：DR007 与十年期国债收益率为 %，两融余额为亿元。")
+            st.caption("「最新值」为原始单位：DR007、两融余额同比为 %，两融余额为亿元。")
 
             st.divider()
-            st.subheader("信用货币增速指数（月频更新）")
+            st.subheader("信用货币长期利率与增速")
             if "money_index" in liquidity_indices:
                 render_liquidity_block(
                     liquidity_indices["money_index"],
@@ -2876,12 +2885,13 @@ with liquidity_tab:
                 )
             money_components = _attach_group_share(
                 liquidity_components[
-                    liquidity_components["分组"].eq("信用货币增速指数")
+                    liquidity_components["分组"].eq("信用货币长期利率与增速")
                 ].drop(columns=["metric", "分组"]),
                 "money",
                 custom_weights,
             )
             st.dataframe(money_components, width="stretch", hide_index=True)
+            st.caption("十年期国债收益率为周频数据，其余三项为月频数据；月度数据按次月 10 日生效。")
 
             st.divider()
             st.subheader("原始指标走势")
@@ -3570,6 +3580,7 @@ with detail_tab:
                         "刷新最新财报",
                         width="stretch",
                         key=f"focus_refresh_{sector_title}",
+                        type="primary",
                         help=(
                             "重新联网核对这些子行业：哪家公司新披露了定期报告（如百济神州刚发财报），"
                             "就只补拉那几家，已有缓存不会重复解析。"
